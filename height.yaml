@@ -1,0 +1,84 @@
+height_info:
+  binding:
+    files:
+      - legged_gym/legged_gym/envs/base/humanoid_robot.py
+      - challenging_terrain/terrain_base/config.py
+      - legged_gym/legged_gym/envs/base/legged_robot_config.py
+    toggles_and_dims:
+      measure_heights: cfg.terrain.measure_heights  # True/False
+      n_scan: 132  # 12 (x) × 11 (y)
+      clip_range: [-1, 1]  # 高度差裁剪范围
+      update_interval: cfg.depth.update_interval  # 高度更新步频（按全局计数）
+  acquisition:
+    init_points:
+      fn: _init_height_points
+      file: legged_gym/legged_gym/envs/base/humanoid_robot.py
+      grid:
+        measured_points_x: challenging_terrain/terrain_base/config.py::measured_points_x  # 12 个
+        measured_points_y: challenging_terrain/terrain_base/config.py::measured_points_y  # 11 个
+        num_height_points: 132  # meshgrid(x,y).numel()
+      with_noise:
+        measure_horizontal_noise: cfg.terrain.measure_horizontal_noise
+      also_prepare_dataset_points:
+        dataset_points_x: challenging_terrain/terrain_base/config.py::dataset_points_x
+        dataset_points_y: challenging_terrain/terrain_base/config.py::dataset_points_y
+        use: 数据集记录可视化（policy不使用）
+    sampling_runtime:
+      trigger:
+        conds:
+          - cfg.terrain.measure_heights == True
+          - global_counter % cfg.depth.update_interval == 0
+      fn: _get_heights
+      pose_transform:
+        - 将高度采样点在 base yaw 框架下旋转: quat_apply_yaw(base_quat, height_points)
+        - 再平移到世界坐标: + root_states[:, :3]
+      terrain_indexing:
+        - 加上 border_size
+        - 除以 horizontal_scale 并转为 long 索引
+      outputs:
+        - measured_heights: (num_envs, 132)
+        - measured_heights_data: (num_envs, num_height_points_data)  # 记录/可视化用
+  usage:
+    observation_integration:
+      where: compute_observations
+      file: legged_gym/legged_gym/envs/base/humanoid_robot.py
+      step:
+        - heights = clip(root_z - 0.3 - measured_heights, -1, 1)
+        - obs_buf = concat(obs_core, heights, priv_explicit, priv_latent, obs_history_flat)
+      details:
+        obs_toggle: 仅当 cfg.terrain.measure_heights == True 才拼接 heights
+        n_scan: 132  # 直接拼入 observation 的扫描段长度
+        clip_obs: cfg.normalization.clip_observations（对最终 obs_buf 与 privileged_obs 裁剪）
+    reward_usage:
+      base_height_reward:
+        where: _reward_base_height
+        file: legged_gym/legged_gym/envs/base/humanoid_robot.py
+        formula:
+          base_height := mean(root_states[:,2] - measured_heights)
+          penalty := (base_height - cfg.rewards.base_height_target)^2
+        note: measured_heights 提供地形参考，让机体高度评估相对地面而非绝对 z
+    logging_and_visualization:
+      episode_record:
+        buffers:
+          - current_episode_buffer['height_map'] ← measured_heights_data  # 每步追加
+          - episode_data['height_map'] ← 按回合聚合后保存
+      viewer_draw:
+        fn: _draw_debug_vis
+        draw: 使用 measured_heights 与 height_points（或 *_data 版本）在 viewer 中标注
+  configs:
+    sources:
+      - challenging_terrain/terrain_base/config.py
+      - legged_gym/legged_gym/envs/base/legged_robot_config.py
+    keys:
+      - terrain.measure_heights: True  # 启用高度采样
+      - terrain.measured_points_x: [-0.45, -0.3, ..., 1.2]  # 12
+      - terrain.measured_points_y: [-0.75, -0.6, ..., 0.75] # 11
+      - terrain.measure_horizontal_noise: 0.0
+      - depth.update_interval: <int>  # 采样频率
+      - rewards.base_height_target: <float>  # 基座目标高度
+    derived:
+      - n_scan = len(measured_points_x) * len(measured_points_y) = 12 * 11 = 132
+  notes:
+    - measured_heights 是相对地形的高度样本，拼入 obs 作为 n_scan 段，增强对地形的可感知性。
+    - base_height reward 使用 measured_heights 使高度偏离度量具备地面参考，避免仅用绝对 z。
+    - 若关闭 measure_heights，则不采样、不拼接 heights，但 n_scan 维度设计在配置中保留为固定值。
