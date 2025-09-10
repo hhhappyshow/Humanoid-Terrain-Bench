@@ -1,0 +1,193 @@
+observation:
+  binding:
+    files:
+      - legged_gym/legged_gym/envs/base/humanoid_robot.py  # compute_observations
+      - legged_gym/legged_gym/envs/base/legged_robot_config.py  # n_scan, n_proprio, n_priv, n_priv_latent, history_len, num_observations
+    dims_from_config:
+      n_scan: 132
+      n_proprio: 3 + 2 + 3 + 4 + 36 + 5
+      n_priv: 3 + 3 + 3
+      n_priv_latent: 4 + 1 + 12 + 12
+      history_len: 10
+      num_observations: n_proprio + n_scan + history_len*n_proprio + n_priv_latent + n_priv
+    normalization:
+      clip_observations: cfg.normalization.clip_observations
+      scales: cfg.obs_scales (用于 lin_vel, ang_vel, dof_pos, dof_vel 等)
+  compute:
+    file: legged_gym/legged_gym/envs/base/humanoid_robot.py
+    fns:
+      - compute_observations
+      - _init_height_points  # 生成 12×11 的高度采样网格
+      - _get_heights         # 采样地形高度
+    steps:
+      - 组装 base 部分(动力学/IMU/命令/本体/接触/上一步动作)
+      - 若启用地形高度: 追加 heights(clip(root_z - 0.3 - measured_heights, -1, 1))
+      - 追加 priv_explicit 与 priv_latent
+      - 展平并追加 obs_history_buf（长度 = history_len * n_proprio）
+      - 最终对 obs_buf、privileged_obs 做对称裁剪
+  terms:
+    base:
+      - base_ang_vel_scaled: base_ang_vel * obs_scales.ang_vel  # 3
+      - imu_roll_pitch: [roll, pitch]  # 2
+      - yaw_related:
+          - zero_placeholder: 0 * delta_yaw  # 1
+          - delta_yaw: target_yaw - yaw  # 1
+          - delta_next_yaw: next_target_yaw - yaw  # 1
+      - command_and_env_flags:
+          - zero_placeholders_cmd: 0 * commands[0:2]  # 2
+          - command_vx: commands[:, 0:1]  # 1
+          - is_not_env_class_17: (env_class != 17).float()  # 1
+          - is_env_class_17: (env_class == 17).float()  # 1
+      - dof_state:
+          - dof_pos_error_scaled: (dof_pos - default_dof_pos_all) * obs_scales.dof_pos  # DoF
+          - dof_vel_scaled: dof_vel * obs_scales.dof_vel  # DoF
+      - last_action: action_history_buf[:, -1]  # num_actions
+      - contacts_centered: contact_filt.float() - 0.5  # typically 2
+    terrain_scan:
+      - heights: clip(root_z - 0.3 - measured_heights, -1, 1)  # 长度=132(12×11)
+    privileged:
+      - explicit:
+          - base_lin_vel_scaled: base_lin_vel * obs_scales.lin_vel  # 3
+          - zeros_like_lin_vel_1: 0 * base_lin_vel  # 3
+          - zeros_like_lin_vel_2: 0 * base_lin_vel  # 3
+      - latent:
+          - mass_params_tensor
+          - friction_coeffs_tensor
+          - motor_strength_bias_0: motor_strength[0] - 1
+          - motor_strength_bias_1: motor_strength[1] - 1
+    history:
+      - obs_history: obs_history_buf.view(num_envs, -1)  # history_len * n_proprio
+  variant_configs:
+    base_config_file: legged_gym/legged_gym/envs/base/legged_robot_config.py
+    notes:
+      - n_scan 固定为 132（measured_points_x 12 × measured_points_y 11）
+      - 是否加入 heights 取决于 cfg.terrain.measure_heights
+    examples:
+      - legged_gym/legged_gym/envs/h1/h1_2_fix.py
+      - legged_gym/legged_gym/envs/g1/g1_fix.py
+      - legged_gym/legged_gym/envs/GR1/gr1_fix.py
+
+action:
+  binding:
+    files:
+      - legged_gym/legged_gym/envs/base/humanoid_robot.py  # step, _compute_torques
+      - legged_gym/legged_gym/envs/base/legged_robot_config.py  # num_actions, control configs
+    params:
+      num_actions: cfg.env.num_actions  # 通常为 12
+      control_type: cfg.control.control_type  # 'P' | 'V' | 'T'
+      action_scale: cfg.control.action_scale
+      decimation: cfg.control.decimation
+      clip_actions: cfg.normalization.clip_actions
+      pd_gains: cfg.control.stiffness/damping（P/V 模式）
+      default_joint_angles: cfg.init_state.default_joint_angles
+      dof_names_order: 从 URDF 资产加载的 self.dof_names 顺序
+  compute:
+    file: legged_gym/legged_gym/envs/base/humanoid_robot.py
+    fns:
+      - step
+      - _compute_torques
+    steps:
+      - 可选动作延迟: 从 action_history_buf 取 -delay-1
+      - 对输入动作按 clip_actions/action_scale 对称裁剪
+      - 重复 decimation 次:
+          - torques = _compute_torques(actions)
+          - set_dof_actuation_force_tensor(torques) → simulate()
+      - post_physics_step: compute_observations, compute_reward, check_termination, reset
+      - P 模式下: target = default_angle + action_scale * action → 通过 PD 转为力矩
+  terms:
+    semantics:
+      - 类型: per-DoF 目标量（依 control_type 为位置/速度/力矩）
+      - 通道顺序: 与 URDF 资产加载后的 dof_names 一致
+    channels_by_robot:
+      H1_2Fix (12):
+        - left_hip_yaw_joint
+        - left_hip_roll_joint
+        - left_hip_pitch_joint
+        - left_knee_joint
+        - left_ankle_pitch_joint
+        - left_ankle_roll_joint
+        - right_hip_yaw_joint
+        - right_hip_roll_joint
+        - right_hip_pitch_joint
+        - right_knee_joint
+        - right_ankle_pitch_joint
+        - right_ankle_roll_joint
+      G1 (12):
+        - left_hip_yaw_joint
+        - left_hip_roll_joint
+        - left_hip_pitch_joint
+        - left_knee_joint
+        - left_ankle_pitch_joint
+        - left_ankle_roll_joint
+        - right_hip_yaw_joint
+        - right_hip_roll_joint
+        - right_hip_pitch_joint
+        - right_knee_joint
+        - right_ankle_pitch_joint
+        - right_ankle_roll_joint
+      GR1 (12):
+        - left_hip_roll_joint
+        - left_hip_yaw_joint
+        - left_hip_pitch_joint
+        - left_knee_pitch_joint
+        - left_ankle_pitch_joint
+        - left_ankle_roll_joint
+        - right_hip_roll_joint
+        - right_hip_yaw_joint
+        - right_hip_pitch_joint
+        - right_knee_pitch_joint
+        - right_ankle_pitch_joint
+        - right_ankle_roll_joint
+  variant_configs:
+    base_config_file: legged_gym/legged_gym/envs/base/legged_robot_config.py
+    urdf_sources:
+      - H1_2Fix: resources/robots/h1_2/h1_2_fix_arm.urdf
+      - G1: resources/robots/g1/g1_12dof_with_hand.urdf
+      - GR1: resources/robots/GR1/GR1T2_fourier_hand_6dof.urdf
+    notes:
+      - 精确通道顺序 = 运行时的 self.dof_names；以上列表为语义集合
+      - 可进一步导出 index → joint_name 映射表以完全确定顺序
+
+reward:
+  binding:
+    file: legged_gym/legged_gym/envs/base/humanoid_robot.py
+    prepare_fn: _prepare_reward_function
+    scales_source: cfg.rewards.scales
+    scaled_by_dt: true
+    only_positive: cfg.rewards.only_positive_rewards
+  compute:
+    file: legged_gym/legged_gym/envs/base/humanoid_robot.py
+    fn: compute_reward
+    steps:
+      - total += reward_fn_i() * reward_scales[name_i]
+      - if only_positive: total = clip(total, min=0)
+      - if 'termination' in scales: total += _reward_termination() * scale
+  terms:
+    tracking:
+      - tracking_lin_vel
+      - tracking_ang_vel
+    regularization_and_safety:
+      - lin_vel_z
+      - ang_vel_xy
+      - orientation
+      - base_height
+      - torques
+      - dof_vel
+      - dof_acc
+      - action_rate
+      - collision
+      - dof_pos_limits
+      - dof_vel_limits
+      - torque_limits
+      - feet_contact_forces
+    gait_and_stability:
+      - feet_air_time
+      - stumble
+      - stand_still
+    termination:
+      - termination
+  variant_configs:
+    base_config_file: legged_gym/legged_gym/envs/base/legged_robot_config.py
+    examples:
+      h1_2_fix: legged_gym/legged_gym/envs/h1/h1_2_fix.py
+      gr1_fix: legged_gym/legged_gym/envs/GR1/gr1_fix.py
