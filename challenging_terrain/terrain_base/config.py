@@ -23,7 +23,7 @@ class terrain_config:
         measure_heights = True # 生成采样的高度点
         measured_points_x = [-0.45, -0.3, -0.15, 0, 0.15, 0.3, 0.45, 0.6, 0.75, 0.9, 1.05, 1.2] # 1mx1.6m rectangle (without center line)
         measured_points_y = [-0.75, -0.6, -0.45, -0.3, -0.15, 0., 0.15, 0.3, 0.45, 0.6, 0.75]
-        measure_horizontal_noise = 0.0
+        measure_horizontal_noise = 0.01
 
         max_init_terrain_level = 1 # starting curriculum state
         terrain_length = 10.
