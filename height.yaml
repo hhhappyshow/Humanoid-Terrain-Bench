@@ -82,3 +82,45 @@ height_info:
     - measured_heights 是相对地形的高度样本，拼入 obs 作为 n_scan 段，增强对地形的可感知性。
     - base_height reward 使用 measured_heights 使高度偏离度量具备地面参考，避免仅用绝对 z。
     - 若关闭 measure_heights，则不采样、不拼接 heights，但 n_scan 维度设计在配置中保留为固定值。
+  workflow:
+    modify_heights:
+      steps:
+        - step: 第一步
+          desc: 在 challenging_terrain/terrain_base/config.py 改采样网格（点数/范围）
+          file: challenging_terrain/terrain_base/config.py
+          keys:
+            - terrain_config.measured_points_x
+            - terrain_config.measured_points_y
+            - terrain_config.dataset_points_x  # 仅记录/可视化
+            - terrain_config.dataset_points_y  # 仅记录/可视化
+          notes:
+            - 改变点数会改变 n_scan = len(x)*len(y)，需与 cfg.env.n_scan 保持一致
+            - 如需要加入扰动，见 measure_horizontal_noise（同文件）
+        - step: 第二步
+          desc: 调整相关开关/频率/目标高度
+          files:
+            - challenging_terrain/terrain_base/config.py  # measure_heights, measure_horizontal_noise
+            - legged_gym/legged_gym/envs/base/legged_robot_config.py  # update_interval, base_height_target
+          keys:
+            - terrain_config.measure_heights  # 开关（地形配置）
+            - terrain_config.measure_horizontal_noise  # 采样点水平扰动（地形配置）
+            - LeggedRobotCfg.depth.update_interval  # 高度更新步频（机器人配置）
+            - LeggedRobotCfg.rewards.base_height_target  # 基座目标高度（机器人配置）
+        - step: 第三步
+          desc: 调整观测拼接/裁剪与奖励；必要时改采样与索引
+          file: legged_gym/legged_gym/envs/base/humanoid_robot.py
+          where:
+            - compute_observations  # heights 裁剪、与 obs 的拼接
+            - _reward_base_height  # 使用 measured_heights 的奖励
+            - _init_height_points  # 采样点生成（含水平噪声）
+            - _get_heights  # 位姿变换与地形索引
+          notes:
+            - heights 默认裁剪到 [-1, 1]，可按需求放宽或标准化后再裁剪
+            - 如改了网格点数，确保 cfg.env.n_scan 与网络输入一致
+        - step: 第四步
+          desc: 运行验证与可视化
+          scripts:
+            - legged_gym/legged_gym/scripts/play.py  # 快速交互查看
+            - legged_gym/legged_gym/scripts/evaluate.py  # 评估表现
+          observe:
+            - logs 下 episode 记录中的 height_map 与 viewer 可视化是否匹配期望
