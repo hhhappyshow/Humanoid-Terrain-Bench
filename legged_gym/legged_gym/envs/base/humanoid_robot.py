@@ -34,7 +34,7 @@ from warnings import WarningMessage
 import numpy as np
 import os
 
-from isaacgym.torch_utils import *
+from isaacgym.torch_utils import torch_rand_float, to_torch, quat_rotate_inverse, get_axis_params, quat_from_euler_xyz
 from isaacgym import gymtorch, gymapi, gymutil
 
 import torch, torchvision
@@ -85,6 +85,19 @@ class HumanoidRobot(BaseTask):
         
         if not self.headless:
             self.set_camera(self.cfg.viewer.pos, self.cfg.viewer.lookat)
+
+        # if self.terrain.cfg.measure_heights:
+        #     self.measured_heights = torch.zeros(self.num_envs, self.cfg.env.n_scan, dtype=torch.float, device=self.device, requires_grad=False)
+        
+        # self.measured_heights = 0
+        self.global_counter = 0
+        self.front_points_num = 10  # 默认前方采样点数量
+        
+        # 地形类型常量 (根据 combine_config.py 中的索引)
+        self.TERRAIN_TYPE_STAIRS = 5   # 台阶地形 (stair)
+        self.TERRAIN_TYPE_SLOPE = 7    # 斜坡地形 (slope)
+        self.TERRAIN_TYPE_GAP = 8 # GAP地形（GAP）
+        
         self._init_buffers()
         self._prepare_reward_function()
     
@@ -120,6 +133,7 @@ class HumanoidRobot(BaseTask):
 
         self.reset_idx(torch.arange(self.num_envs, device=self.device))
         self.post_physics_step()
+
 
     def get_data_stats(self):
         """get dataset information"""
@@ -525,7 +539,7 @@ class HumanoidRobot(BaseTask):
             self.motor_strength[0] - 1, 
             self.motor_strength[1] - 1
         ), dim=-1)
-        if self.cfg.terrain.measure_heights:
+        if self.terrain.cfg.measure_heights:
             heights = torch.clip(self.root_states[:, 2].unsqueeze(1) - 0.3 - self.measured_heights, -1, 1.)
             
             self.obs_buf = torch.cat([obs_buf, heights, priv_explicit, priv_latent, self.obs_history_buf.view(self.num_envs, -1)], dim=-1)
@@ -669,7 +683,7 @@ class HumanoidRobot(BaseTask):
             self.commands[:, 2] = torch.clip(0.8*wrap_to_pi(self.commands[:, 3] - heading), -1., 1.)
             self.commands[:, 2] *= torch.abs(self.commands[:, 2]) > self.cfg.commands.ang_vel_clip
         
-        if self.cfg.terrain.measure_heights:
+        if self.terrain.cfg.measure_heights:
             if self.global_counter % self.cfg.depth.update_interval == 0:
                 self.measured_heights, self.measured_heights_data  = self._get_heights()
         if self.cfg.domain_rand.push_robots and  (self.common_step_counter % self.cfg.domain_rand.push_interval == 0):
@@ -679,20 +693,103 @@ class HumanoidRobot(BaseTask):
         return self.env_goals.gather(1, (self.cur_goal_idx[:, None, None]+future).expand(-1, -1, self.env_goals.shape[-1])).squeeze(1)
 
     def _resample_commands(self, env_ids):
-        """ Randommly select commands of some environments
+        """ Resample commands intelligently based on terrain complexity.
 
         Args:
             env_ids (List[int]): Environments ids for which new commands are needed
         """
-        self.commands[env_ids, 0] = torch_rand_float(self.command_ranges["lin_vel_x"][0], self.command_ranges["lin_vel_x"][1], (len(env_ids), 1), device=self.device).squeeze(1)
-        if self.cfg.commands.heading_command:
-            self.commands[env_ids, 3] = torch_rand_float(self.command_ranges["heading"][0], self.command_ranges["heading"][1], (len(env_ids), 1), device=self.device).squeeze(1)
+        if self.cfg.commands.height_adaptive_speed:  # Check if adaptive speed is enabled
+            adaptive_speeds = self._generate_adaptive_speed(env_ids)
+            adaptive_speeds = self._apply_terrain_specific_speed(env_ids, adaptive_speeds)
+            self.commands[env_ids, 0] = adaptive_speeds
         else:
-            self.commands[env_ids, 2] = torch_rand_float(self.command_ranges["ang_vel_yaw"][0], self.command_ranges["ang_vel_yaw"][1], (len(env_ids), 1), device=self.device).squeeze(1)
+            # Default random sampling for linear velocity
+            self.commands[env_ids, 0] = torch_rand_float(
+                self.command_ranges["lin_vel_x"][0], 
+                self.command_ranges["lin_vel_x"][1], 
+                (len(env_ids), 1), 
+                device=self.device
+            ).squeeze(1)
+
+        if self.cfg.commands.heading_command:
+            self.commands[env_ids, 3] = torch_rand_float(
+                self.command_ranges["heading"][0], 
+                self.command_ranges["heading"][1], 
+                (len(env_ids), 1), 
+                device=self.device
+            ).squeeze(1)
+        else:
+            self.commands[env_ids, 2] = torch_rand_float(
+                self.command_ranges["ang_vel_yaw"][0], 
+                self.command_ranges["ang_vel_yaw"][1], 
+                (len(env_ids), 1), 
+                device=self.device
+            ).squeeze(1)
             self.commands[env_ids, 2] *= torch.abs(self.commands[env_ids, 2]) > self.cfg.commands.ang_vel_clip
 
-        # set small commands to zero
+        # Set small commands to zero
         self.commands[env_ids, :2] *= torch.abs(self.commands[env_ids, 0:1]) > self.cfg.commands.lin_vel_clip
+
+    def _generate_adaptive_speed(self, env_ids):
+        """基于地形复杂度生成自适应速度
+        
+        速度策略：
+        - 简单地形（complexity < 0.3）：高速前进 [1.0, 1.5] m/s
+        - 中等地形（0.3 ≤ complexity < 0.7）：中速前进 [0.5, 1.0] m/s  
+        - 困难地形（complexity ≥ 0.7）：低速前进 [0.2, 0.5] m/s
+        """
+        complexity = self._analyze_terrain_complexity()[env_ids]
+
+        # 根据复杂度确定速度区间
+        simple_mask = complexity < 0.3
+        medium_mask = (complexity >= 0.3) & (complexity < 0.7)
+        hard_mask = complexity >= 0.7
+        
+        adaptive_speeds = torch.zeros(len(env_ids), device=self.device)
+        
+        # 简单地形：高速 [1.0, 1.5] m/s
+        if torch.any(simple_mask):
+            simple_complexity = complexity[simple_mask]
+            # 在简单地形中，复杂度越低速度越快
+            simple_speeds = 1.5 - 0.5 * simple_complexity  # 1.5 → 1.0
+            adaptive_speeds[simple_mask] = simple_speeds
+            
+        # 中等地形：中速 [0.5, 1.0] m/s
+        if torch.any(medium_mask):
+            medium_complexity = complexity[medium_mask]
+            # 在中等地形中，根据复杂度线性插值
+            medium_speeds = 1.0 - 0.5 * (medium_complexity - 0.3) / 0.4  # 1.0 → 0.5
+            adaptive_speeds[medium_mask] = medium_speeds
+            
+        # 困难地形：低速 [0.2, 0.5] m/s
+        if torch.any(hard_mask):
+            hard_complexity = complexity[hard_mask]
+            # 在困难地形中，复杂度越高速度越慢
+            hard_speeds = 0.5 - 0.3 * (hard_complexity - 0.7) / 0.3  # 0.5 → 0.2
+            adaptive_speeds[hard_mask] = hard_speeds
+
+        return adaptive_speeds
+
+    def _apply_terrain_specific_speed(self, env_ids, adaptive_speeds):
+        """针对特定地形类型的速度调整"""
+        
+        # 台阶地形：更保守的速度
+        stair_mask = (self.env_class[env_ids] == self.TERRAIN_TYPE_STAIRS)
+        adaptive_speeds[stair_mask] *= 0.7  # 台阶上减速30%
+        
+        # 斜坡地形：根据坡度调整
+        slope_mask = (self.env_class[env_ids] == self.TERRAIN_TYPE_SLOPE)
+        if torch.any(slope_mask):
+            # 上坡减速，下坡可以稍快（通过高度梯度判断）
+            forward_gradient = self._get_forward_height_gradient()[env_ids]
+            slope_speed_factor = torch.clamp(1.0 - 0.5 * forward_gradient, 0.5, 1.2)
+            adaptive_speeds[slope_mask] *= slope_speed_factor[slope_mask]
+        
+        # GAP地形：显著减速
+        obstacle_mask = (self.env_class[env_ids] == self.TERRAIN_TYPE_GAP)
+        adaptive_speeds[obstacle_mask] *= 0.5  # GAP地形减速50%
+        
+        return adaptive_speeds
 
     def _compute_torques(self, actions):
         """ Compute torques from actions.
@@ -858,6 +955,11 @@ class HumanoidRobot(BaseTask):
         if self.cfg.env.history_encoding:
             self.obs_history_buf = torch.zeros(self.num_envs, self.cfg.env.history_len, self.cfg.env.n_proprio, device=self.device, dtype=torch.float)
         self.action_history_buf = torch.zeros(self.num_envs, self.cfg.domain_rand.action_buf_len, self.num_dofs, device=self.device, dtype=torch.float)
+        if self.terrain.cfg.measure_heights:
+            self.height_points, self.height_points_data = self._init_height_points()
+            if self.global_counter % self.cfg.depth.update_interval == 0:
+                self.measured_heights, self.measured_heights_data  = self._get_heights()
+
         # self.contact_buf = torch.zeros(self.num_envs, self.cfg.env.contact_buf_len, 4, device=self.device, dtype=torch.float)
         self.contact_buf = torch.zeros(self.num_envs, self.cfg.env.contact_buf_len, 2, device=self.device, dtype=torch.float)
 
@@ -869,10 +971,6 @@ class HumanoidRobot(BaseTask):
         self.base_lin_vel = quat_rotate_inverse(self.base_quat, self.root_states[:, 7:10])
         self.base_ang_vel = quat_rotate_inverse(self.base_quat, self.root_states[:, 10:13])
         self.projected_gravity = quat_rotate_inverse(self.base_quat, self.gravity_vec)
-        if self.cfg.terrain.measure_heights:
-            self.height_points, self.height_points_data = self._init_height_points()
-        self.measured_heights = 0
-        self.measured_heights = 0
 
         # joint positions offsets and PD gains
         self.default_dof_pos = torch.zeros(self.num_dof, dtype=torch.float, device=self.device, requires_grad=False)
@@ -905,6 +1003,7 @@ class HumanoidRobot(BaseTask):
                                             self.cfg.depth.buffer_len, 
                                             self.cfg.depth.resized[1], 
                                             self.cfg.depth.resized[0]).to(self.device)
+
 
     def _prepare_reward_function(self):
         """ Prepares a list of reward functions, whcih will be called to compute the total reward.
@@ -1259,7 +1358,7 @@ class HumanoidRobot(BaseTask):
             # visualize saved height point
             offset = torch_rand_float(-self.cfg.terrain.measure_horizontal_noise, self.cfg.terrain.measure_horizontal_noise, (self.num_height_points_data,2), device=self.device).squeeze()
             xy_noise = torch_rand_float(-self.cfg.terrain.measure_horizontal_noise, self.cfg.terrain.measure_horizontal_noise, (self.num_height_points_data,2), device=self.device).squeeze() + offset
-            points_data[i, :, 0] = grid_x_data.flatten() #+ xy_noise[:, 0]
+            points_data[i, :,  0] = grid_x_data.flatten() #+ xy_noise[:, 0]
             points_data[i, :, 1] = grid_y_data.flatten() #+ xy_noise[:, 1]
         return points, points_data
 
@@ -1317,6 +1416,23 @@ class HumanoidRobot(BaseTask):
         heights_data = torch.min(heights_data, heights3_data)
 
         return heights.view(self.num_envs, -1) * self.terrain.cfg.vertical_scale, heights_data.view(self.num_envs, -1) * self.terrain.cfg.vertical_scale
+
+    def _analyze_terrain_complexity(self):
+        """分析前方地形复杂度"""
+        # 提取前方高度采样点（机器人前方0-1.2米区域）
+        forward_heights = self.measured_heights[:, :self.front_points_num]  # 前方采样点
+
+        # 计算地形复杂度指标
+        height_variance = torch.var(forward_heights, dim=1)      # 高度方差（起伏程度）
+        height_gradient = torch.max(forward_heights, dim=1)[0] - torch.min(forward_heights, dim=1)[0]  # 高度差
+        height_roughness = torch.mean(torch.abs(torch.diff(forward_heights, dim=1)), dim=1)  # 粗糙度
+
+        # 综合复杂度评分 [0, 1]
+        complexity = torch.clamp(
+            0.4 * height_variance + 0.4 * height_gradient + 0.2 * height_roughness,
+            0.0, 1.0
+        )
+        return complexity
 
     #------------ reward functions----------------
     def _reward_lin_vel_z(self):
@@ -1410,3 +1526,18 @@ class HumanoidRobot(BaseTask):
     def _reward_feet_contact_forces(self):
         # penalize high contact forces
         return torch.sum((torch.norm(self.contact_forces[:, self.feet_indices, :], dim=-1) -  self.cfg.rewards.max_contact_force).clip(min=0.), dim=1)
+
+    def _get_forward_height_gradient(self):
+        """计算机器人前方的高度梯度，用于坡度感知"""
+        # 假设 measured_heights 包含机器人周围的高度数据
+        # 例如：measured_heights 的形状为 (num_envs, num_points)
+        forward_points = self.measured_heights[:, :self.front_points_num]
+        backward_points = self.measured_heights[:, -self.front_points_num:]
+
+        # 计算前后点的平均高度
+        forward_avg = torch.mean(forward_points, dim=1)
+        backward_avg = torch.mean(backward_points, dim=1)
+
+        # 梯度为前后平均高度差
+        gradient = forward_avg - backward_avg
+        return gradient

@@ -82,6 +82,8 @@ class LeggedRobotCfg(BaseConfig):
         reach_goal_delay = 0.1
         num_future_goal_obs = 2
 
+        measure_heights = True  # 控制是否启用地形高度测量
+
     class depth:
         use_camera = False
         camera_num_envs = 192
@@ -91,7 +93,7 @@ class LeggedRobotCfg(BaseConfig):
         position = [0.27, 0, 0.03]  # front camera
         angle = [-5, 5]  # positive pitch down
 
-        update_interval = 5  # 5 works without retraining, 8 worse
+        update_interval = 6  # 5 works without retraining, 8 worse
 
         original = (106, 60)
         resized = (87, 58)
@@ -157,6 +159,8 @@ class LeggedRobotCfg(BaseConfig):
             heading = 0.5
 
         waypoint_delta = 0.7
+
+        height_adaptive_speed = True  # 修改默认值为True
 
     class init_state:
         pos = [0.0, 0.0, 1.] # x,y,z [m]
