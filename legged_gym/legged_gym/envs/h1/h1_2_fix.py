@@ -62,7 +62,7 @@ class H1_2FixCfg( LeggedRobotCfg ):
         }
 
     class env( LeggedRobotCfg.env ):
-        num_envs = 2048
+        num_envs = 1024
         n_scan = 132
         n_priv = 3 + 3 + 3 
         n_priv_latent = 4 + 1 + 12 + 12 
