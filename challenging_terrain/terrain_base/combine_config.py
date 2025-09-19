@@ -28,7 +28,8 @@ class combine_config:
         ]
 
         proportions = [
-                ("single", 5, 0.3),#
+                ("single", 3, 0.5),  # flat terrain - 50% probability
+                ("single", 6, 0.5),  # wave terrain - 50% probability
                 # ("addition", 0, 0.5),
                 # ("multiplication", 3, 0.4),
         ]

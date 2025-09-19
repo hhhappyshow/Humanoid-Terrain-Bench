@@ -138,6 +138,12 @@ class LeggedRobotCfg(BaseConfig):
         
         lin_vel_clip = 0.2
         ang_vel_clip = 0.4
+        
+        # Terrain complexity analysis weights
+        speed_complexity_weight = 0.3
+        speed_gradient_weight = 0.4
+        speed_roughness_weight = 0.3
+        
         # Easy ranges
         class ranges:
             lin_vel_x = [0., 1.5] # min max [m/s]
