@@ -24,13 +24,14 @@ class combine_config:
         ]
 
         addition = [
-                [single[5],single[2],single[4],single[8]]
+                # [single[5],single[2],single[4],single[8]]
+                [single[3],single[6]]
         ]
 
         proportions = [
-                ("single", 3, 0.5),  # flat terrain - 50% probability
-                ("single", 6, 0.5),  # wave terrain - 50% probability
-                # ("addition", 0, 0.5),
+                # ("single", 3, 0.5),  # flat terrain - 50% probability
+                # ("single", 6, 0.5),  # wave terrain - 50% probability
+                ("addition", 0, 1),  
                 # ("multiplication", 3, 0.4),
         ]
 
