@@ -50,7 +50,7 @@ from terrain_base.config import terrain_config
 from legged_gym.utils.math import *
 from legged_gym.utils.helpers import class_to_dict
 from scipy.spatial.transform import Rotation as R
-from .legged_robot_config import LeggedRobotCfg
+from ..legged_robot_config import LeggedRobotCfg
 
 from tqdm import tqdm
 import cv2
@@ -514,7 +514,7 @@ class HumanoidRobot(BaseTask):
             # print("Next goal (relative):", self.next_goals[0, :2])        # 下一个目标点 - 相对环境原点坐标系
             # print("Current goal (world):", self.cur_goals[0, :2] + self.env_origins[0, :2])      # 当前目标点 - 世界坐标系
             # print("Next goal (world):", self.next_goals[0, :2] + self.env_origins[0, :2])        # 下一个目标点 - 世界坐标系
-            # # print("Target pos rel:", self.target_pos_rel[0])   # 相对位置向量 - 机器人本体坐标系
+            # print("Target pos rel:", self.target_pos_rel[0])   # 相对位置向量 - 机器人本体坐标系
             # print("Robot yaw:", self.yaw[0])                   # 机器人当前朝向 - 世界坐标系
             # print("Target yaw:", self.target_yaw[0])           # 目标朝向 - 世界坐标系
             # print("self.delta_yaw=",self.delta_yaw[0])
@@ -781,15 +781,12 @@ class HumanoidRobot(BaseTask):
         
         return adaptive_speeds
     
-        
     def _resample_commands(self, env_ids):
         """智能的命令重采样（替换原有的随机采样），集成heading/ang_vel采样和clip逻辑"""
         # 采样前进速度
 
         if self.cfg.commands.height_adaptive_speed:
             adaptive_speeds = self._generate_adaptive_speed(env_ids)
-            # 可选：自适应地形速度调整
-            # adaptive_speeds = self._apply_terrain_specific_speed(env_ids, adaptive_speeds)
             self.commands[env_ids, 0] = adaptive_speeds
         else:
             self.commands[env_ids, 0] = torch_rand_float(
@@ -799,19 +796,15 @@ class HumanoidRobot(BaseTask):
             ).squeeze(1)
 
         if self.cfg.commands.heading_command:
-            self.[encommandsv_ids, 3] = torch_rand_float(
-                self.command_ranges["heading"][0],
-                self.command_ranges["heading"][1],
-                (len(env_ids), 1), device=self.device
-            ).squeeze(1)
+            if hasattr(self, 'target_yaw') and hasattr(self, 'yaw'):
+                self.commands[env_ids, 3] = self.target_yaw[env_ids]
+            else:
+                self.commands[env_ids, 3] = torch_rand_float(self.command_ranges["heading"][0], self.command_ranges["heading"][1], (len(env_ids), 1), device=self.device).squeeze(1)
 
-            if hasattr(self, 'yaw'):
-                heading_error = self.commands[env_ids, 3] - self.yaw[env_ids]
-                heading_error_wrapped = wrap_to_pi(heading_error)
-                
-                angular_velocity = 0.5 * heading_error_wrapped
-                self.commands[env_ids, 2] = torch.clip(angular_velocity, -1.5, 1.5)
-                
+            if hasattr(self, 'target_yaw') and hasattr(self, 'yaw'):
+                yaw_error = wrap_to_pi(self.commands[env_ids, 3] - self.yaw[env_ids])
+                self.commands[env_ids, 2] =  0.8 * yaw_error
+            
             else:
                 self.commands[env_ids, 2] = torch_rand_float(
                     self.command_ranges["ang_vel_yaw"][0],
@@ -826,11 +819,12 @@ class HumanoidRobot(BaseTask):
 
         small_lin_vel_mask = torch.abs(self.commands[env_ids, 0]) <= self.cfg.commands.lin_vel_clip
         self.commands[env_ids, 0] = torch.where(small_lin_vel_mask, 
-                                            torch.zeros_like(self.commands[env_ids, 0]), 
-                                            self.commands[env_ids, 0])
+                                               torch.zeros_like(self.commands[env_ids, 0]), 
+                                               self.commands[env_ids, 0])
         self.commands[env_ids, 1] = torch.where(small_lin_vel_mask, 
-                                            torch.zeros_like(self.commands[env_ids, 1]), 
-                                            self.commands[env_ids, 1])
+                                               torch.zeros_like(self.commands[env_ids, 1]), 
+                                               self.commands[env_ids, 1])
+
 
     def _compute_torques(self, actions):
         """ Compute torques from actions.

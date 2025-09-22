@@ -21,6 +21,7 @@ class terrain_config:
         dynamic_friction = 1.0
         restitution = 0.
         measure_heights = True # 生成采样的高度点
+        front_points_num = 5
         measured_points_x = [-0.45, -0.3, -0.15, 0, 0.15, 0.3, 0.45, 0.6, 0.75, 0.9, 1.05, 1.2] # 1mx1.6m rectangle (without center line)
         measured_points_y = [-0.75, -0.6, -0.45, -0.3, -0.15, 0., 0.15, 0.3, 0.45, 0.6, 0.75]
         measure_horizontal_noise = 0.0
