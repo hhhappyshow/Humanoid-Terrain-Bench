@@ -149,10 +149,10 @@ class H1_2FixCfg( LeggedRobotCfg ):
 
     class commands( LeggedRobotCfg.commands ):
         """运动命令配置"""
-        resampling_time = 10.0         # 命令重采样时间间隔（秒）
+        resampling_time = 1.0         # 命令重采样时间间隔（秒）
         heading_command = True         # 启用朝向命令模式
         ang_vel_clip = 0.1            # 角速度命令死区阈值
-        lin_vel_clip = 0.1          # 线速度裁
+        lin_vel_clip = 0.2            # 线速度命令死区阈值
         
         # 策略1：智能速度生成配置
         height_adaptive_speed = True   # 启用基于高度的自适应速度
@@ -163,25 +163,25 @@ class H1_2FixCfg( LeggedRobotCfg ):
         # 命令范围配置
         class ranges( LeggedRobotCfg.commands.ranges ):
             """命令范围设置"""
-            lin_vel_x = [0.1, 1.2]     # 前进速度范围（m/s）
+            lin_vel_x = [0.1, 1.2]     # 前进速度范围（m/s）      随机前进速度 目标朝向 目标角速度
             lin_vel_y = [0.0, 0.0]     # 侧向速度范围（设为0，只前进）
             ang_vel_yaw = [0, 0]       # 偏航角速度范围（设为0，直线行走）
-            heading = [-1.2, 1.2]           # 朝向角度范围
+            heading = [-1.2, 1.2]      # 朝向角度范围
 
         class max_ranges( LeggedRobotCfg.commands.max_ranges ):
             """最大命令范围（课程学习后期或固定模式）"""
             lin_vel_x = [0.3, 1.5]     # 前向速度范围 [m/s]
             lin_vel_y = [0.0, 0.0]    # 侧向速度范围 [m/s]
             ang_vel_yaw = [-0.5, 0.5]  # 偏航角速度范围 [rad/s]
-            heading = [-1.5, 1.5]     # 朝向角度范围
+            heading = [-1.6, 1.6]     # 朝向角度范围
 
     class rewards:
         """奖励函数配置"""
         class scales:
             """各项奖励的权重系数 - 恢复原始设置"""
             termination = -0.0          # 终止惩罚（设为0）
-            tracking_lin_vel = 1.5      # 原:1.0 → 新:1.5 (策略6：提高速度跟踪权重)
-            tracking_ang_vel = 0.8      # 原:0.5 → 新:0.8 (策略6：提高速度跟踪权重)
+            tracking_lin_vel = 1.2      # 原:1.0 → 新:1.5 (策略6：提高速度跟踪权重)
+            tracking_ang_vel = 1.0      # 原:0.5 → 新:0.8 (策略6：提高速度跟踪权重)
             lin_vel_z = -2.0           # 垂直速度惩罚（避免跳跃）
             ang_vel_xy = -0.05         # 恢复原始权重
             orientation = -0.           # 恢复：不惩罚姿态
@@ -195,7 +195,10 @@ class H1_2FixCfg( LeggedRobotCfg ):
             feet_stumble = -0.0        # 恢复：不惩罚绊倒
             stand_still = -0.          # 恢复：不惩罚静止
             
-            reach_goal = 1.0           # 到达目标奖励
+            # reach_goal = 1.0           # 到达目标奖励
+            # heading_tracking = 1.0      # 朝向跟踪奖励
+            # next_heading_tracking = 1.0  # 下一朝向跟踪奖励
+            # bridge_center = 1.0         # 桥上居中奖励
 
         only_positive_rewards = True    # 只使用正奖励（避免早期终止问题）
         tracking_sigma = 0.25          # 跟踪奖励的标准差参数
@@ -216,7 +219,7 @@ class H1_2FixCfgPPO( LeggedRobotCfgPPO ):
     
     class algorithm( LeggedRobotCfgPPO.algorithm ):
         """算法参数配置"""
-        entropy_coef = 0.01    # 熵系数（鼓励探索）
+        entropy_coef = 0.01   # 熵系数（鼓励探索）
         
     class runner( LeggedRobotCfgPPO.runner ):
         """训练运行器配置"""
@@ -226,7 +229,7 @@ class H1_2FixCfgPPO( LeggedRobotCfgPPO ):
     class estimator(LeggedRobotCfgPPO.estimator):
         """状态估计器配置（用于处理特权信息）"""
         train_with_estimated_states = True    # 使用估计状态进行训练
-        learning_rate = 1.e-4                # 学习率
+        learning_rate = 2.e-4                # 学习率
         hidden_dims = [128, 64]              # 隐藏层维度
         priv_states_dim = H1_2FixCfg.env.n_priv      # 特权状态维度
         num_prop = H1_2FixCfg.env.n_proprio          # 本体感受维度

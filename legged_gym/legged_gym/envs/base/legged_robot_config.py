@@ -48,7 +48,7 @@ class LeggedRobotCfg(BaseConfig):
         
     class env:
         """环境基础配置"""
-        num_envs = 512  # 并行环境数量（进一步减少以节省GPU内存）
+        num_envs = 6144  # 并行环境数量（默认值，通常会被具体配置覆盖）
 
         # 观测维度定义
         n_scan = 132              # 激光雷达扫描点数量
@@ -254,9 +254,6 @@ class LeggedRobotCfg(BaseConfig):
         """奖励函数配置"""
         class scales:
             """各项奖励的权重系数"""
-            # 跟踪奖励
-            tracking_goal_vel = 1.5       # 目标速度跟踪奖励
-            tracking_yaw = 0.5            # 偏航跟踪奖励
             
             # 正则化奖励（通常为负值，起惩罚作用）
             lin_vel_z = -1.0              # 垂直速度惩罚（避免跳跃）
@@ -377,7 +374,7 @@ class LeggedRobotCfgPPO(BaseConfig):
         policy_class_name = 'ActorCritic'    # 策略类名
         algorithm_class_name = 'PPO'          # 算法类名
         num_steps_per_env = 24               # 每个环境每次迭代的步数
-        max_iterations = 50001               # 最大策略更新次数
+        max_iterations = 100001               # 最大策略更新次数
 
         # 日志记录
         save_interval = 100                  # 保存间隔（每多少次迭代检查一次保存）

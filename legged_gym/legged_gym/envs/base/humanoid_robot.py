@@ -266,14 +266,25 @@ class HumanoidRobot(BaseTask):
         self.reach_goal_timer[next_flag] = 0
 
         # 将目标点转换为世界坐标系
-        cur_goals_world = self.cur_goals[:, :2] + self.env_origins[:, :2]
-        next_goals_world = self.next_goals[:, :2] + self.env_origins[:, :2]
+        # cur_goals_world = self.cur_goals[:, :2] + self.env_origins[:, :2]
+        # next_goals_world = self.next_goals[:, :2] + self.env_origins[:, :2]
         
-        self.reached_goal_ids = torch.norm(self.root_states[:, :2] - cur_goals_world, dim=1) < self.cfg.env.next_goal_threshold
+        # self.reached_goal_ids = torch.norm(self.root_states[:, :2] - cur_goals_world, dim=1) < self.cfg.env.next_goal_threshold
+        # self.reach_goal_timer[self.reached_goal_ids] += 1
+
+        # self.target_pos_rel = cur_goals_world - self.root_states[:, :2]
+        # self.next_target_pos_rel = next_goals_world - self.root_states[:, :2]
+
+        
+        self.reached_goal_ids = torch.norm(self.root_states[:, :2] - self.cur_goals[:, :2], dim=1) < self.cfg.env.next_goal_threshold
         self.reach_goal_timer[self.reached_goal_ids] += 1
 
-        self.target_pos_rel = cur_goals_world - self.root_states[:, :2]
-        self.next_target_pos_rel = next_goals_world - self.root_states[:, :2]
+        self.target_pos_rel = self.cur_goals[:, :2] - self.root_states[:, :2]
+        self.next_target_pos_rel = self.next_goals[:, :2] - self.root_states[:, :2]
+        
+        print('cur_goals',self.cur_goals[:, :2])
+        print('env_origins', self.env_origins[:, :2])
+        print('root_states', self.root_states[:, :2])
 
         norm = torch.norm(self.target_pos_rel, dim=-1, keepdim=True)
         target_vec_norm = self.target_pos_rel / (norm + 1e-5)
@@ -505,29 +516,29 @@ class HumanoidRobot(BaseTask):
         self.delta_yaw = self.target_yaw - self.yaw
         self.delta_next_yaw = self.next_target_yaw - self.yaw
         
-        # if self.global_counter % 5 == 0:
+        if self.global_counter % 5 == 0:
             # 添加调试信息
-            # print("Robot position:", self.root_states[0, :2])  # 机器人位置 - 世界坐标系
-            # print("Env origin:", self.env_origins[0, :2])      # 环境原点 - 世界坐标系
-            # print("Base init state:", self.base_init_state[:2]) # 基础初始状态 - 相对环境原点坐标系
-            # print("Current goal (relative):", self.cur_goals[0, :2])      # 当前目标点 - 相对环境原点坐标系
-            # print("Next goal (relative):", self.next_goals[0, :2])        # 下一个目标点 - 相对环境原点坐标系
-            # print("Current goal (world):", self.cur_goals[0, :2] + self.env_origins[0, :2])      # 当前目标点 - 世界坐标系
-            # print("Next goal (world):", self.next_goals[0, :2] + self.env_origins[0, :2])        # 下一个目标点 - 世界坐标系
-            # # print("Target pos rel:", self.target_pos_rel[0])   # 相对位置向量 - 机器人本体坐标系
-            # print("Robot yaw:", self.yaw[0])                   # 机器人当前朝向 - 世界坐标系
-            # print("Target yaw:", self.target_yaw[0])           # 目标朝向 - 世界坐标系
-            # print("self.delta_yaw=",self.delta_yaw[0])
-            # print("self.delta_next_yaw=",self.delta_next_yaw[0]) 
+            print("Robot position:", self.root_states[0, :2])  # 机器人位置 - 世界坐标系
+            print("Env origin:", self.env_origins[0, :2])      # 环境原点 - 世界坐标系
+            print("Base init state:", self.base_init_state[:2]) # 基础初始状态 - 相对环境原点坐标系
+            print("Current goal (relative):", self.cur_goals[0, :2])      # 当前目标点 - 相对环境原点坐标系
+            print("Next goal (relative):", self.next_goals[0, :2])        # 下一个目标点 - 相对环境原点坐标系
+            print("Current goal (world):", self.cur_goals[0, :2] + self.env_origins[0, :2])      # 当前目标点 - 世界坐标系
+            print("Next goal (world):", self.next_goals[0, :2] + self.env_origins[0, :2])        # 下一个目标点 - 世界坐标系
+            # print("Target pos rel:", self.target_pos_rel[0])   # 相对位置向量 - 机器人本体坐标系
+            print("Robot yaw:", self.yaw[0])                   # 机器人当前朝向 - 世界坐标系
+            print("Target yaw:", self.target_yaw[0])           # 目标朝向 - 世界坐标系
+            print("self.delta_yaw=",self.delta_yaw[0])
+            print("self.delta_next_yaw=",self.delta_next_yaw[0]) 
             
-            # print("######################################################################")
+            print("######################################################################")
             
             # 添加速度和指令信息
-            # print("Robot linear velocity:", self.base_lin_vel[0])  # 机器人线速度 - 机器人本体坐标系
-            # print("Robot angular velocity:", self.base_ang_vel[0])  # 机器人角速度 - 机器人本体坐标系
-            # print("Linear velocity command X:", self.commands[0, 0])  # X方向线速度指令 - 机器人本体坐标系
-            # print("Angular velocity command Yaw:", self.commands[0, 2])  # Z轴角速度指令 - 机器人本体坐标系
-            # print("Heading command:", self.commands[0, 3])  # 朝向指令 - 世界坐标系
+            print("Robot linear velocity:", self.base_lin_vel[0])  # 机器人线速度 - 机器人本体坐标系
+            print("Robot angular velocity:", self.base_ang_vel[0])  # 机器人角速度 - 机器人本体坐标系
+            print("Linear velocity command X:", self.commands[0, 0])  # X方向线速度指令 - 机器人本体坐标系
+            print("Angular velocity command Yaw:", self.commands[0, 2])  # Z轴角速度指令 - 机器人本体坐标系
+            print("Heading command:", self.commands[0, 3])  # 朝向指令 - 世界坐标系
             
 
         obs_buf = torch.cat((#skill_vector, 
@@ -781,15 +792,12 @@ class HumanoidRobot(BaseTask):
         
         return adaptive_speeds
     
-        
     def _resample_commands(self, env_ids):
         """智能的命令重采样（替换原有的随机采样），集成heading/ang_vel采样和clip逻辑"""
         # 采样前进速度
 
         if self.cfg.commands.height_adaptive_speed:
             adaptive_speeds = self._generate_adaptive_speed(env_ids)
-            # 可选：自适应地形速度调整
-            # adaptive_speeds = self._apply_terrain_specific_speed(env_ids, adaptive_speeds)
             self.commands[env_ids, 0] = adaptive_speeds
         else:
             self.commands[env_ids, 0] = torch_rand_float(
@@ -799,19 +807,15 @@ class HumanoidRobot(BaseTask):
             ).squeeze(1)
 
         if self.cfg.commands.heading_command:
-            self.[encommandsv_ids, 3] = torch_rand_float(
-                self.command_ranges["heading"][0],
-                self.command_ranges["heading"][1],
-                (len(env_ids), 1), device=self.device
-            ).squeeze(1)
+            if hasattr(self, 'target_yaw') and hasattr(self, 'yaw'):
+                self.commands[env_ids, 3] = self.target_yaw[env_ids]
+            else:
+                self.commands[env_ids, 3] = torch_rand_float(self.command_ranges["heading"][0], self.command_ranges["heading"][1], (len(env_ids), 1), device=self.device).squeeze(1)
 
-            if hasattr(self, 'yaw'):
-                heading_error = self.commands[env_ids, 3] - self.yaw[env_ids]
-                heading_error_wrapped = wrap_to_pi(heading_error)
-                
-                angular_velocity = 0.5 * heading_error_wrapped
-                self.commands[env_ids, 2] = torch.clip(angular_velocity, -1.5, 1.5)
-                
+            if hasattr(self, 'target_yaw') and hasattr(self, 'yaw'):
+                yaw_error = wrap_to_pi(self.commands[env_ids, 3] - self.yaw[env_ids])
+                self.commands[env_ids, 2] =  0.8 * yaw_error
+            
             else:
                 self.commands[env_ids, 2] = torch_rand_float(
                     self.command_ranges["ang_vel_yaw"][0],
@@ -826,11 +830,12 @@ class HumanoidRobot(BaseTask):
 
         small_lin_vel_mask = torch.abs(self.commands[env_ids, 0]) <= self.cfg.commands.lin_vel_clip
         self.commands[env_ids, 0] = torch.where(small_lin_vel_mask, 
-                                            torch.zeros_like(self.commands[env_ids, 0]), 
-                                            self.commands[env_ids, 0])
+                                               torch.zeros_like(self.commands[env_ids, 0]), 
+                                               self.commands[env_ids, 0])
         self.commands[env_ids, 1] = torch.where(small_lin_vel_mask, 
-                                            torch.zeros_like(self.commands[env_ids, 1]), 
-                                            self.commands[env_ids, 1])
+                                               torch.zeros_like(self.commands[env_ids, 1]), 
+                                               self.commands[env_ids, 1])
+
 
     def _compute_torques(self, actions):
         """ Compute torques from actions.
@@ -930,13 +935,18 @@ class HumanoidRobot(BaseTask):
 
         # 综合评估分数：距离 × (1 + 复杂度)
         performance_score = dis_to_origin * (1 + terrain_complexity)
-        threshold = self.commands[env_ids, 0] * self.cfg.env.episode_length_s * 1.2
+        # threshold = self.commands[env_ids, 0] * self.cfg.env.episode_length_s * 1.2
+        threshold = self.commands[env_ids, 0] * self.cfg.env.episode_length_s
 
         # 晋级/降级判定
-        move_up = performance_score > threshold * 0.8
-        move_down = performance_score < threshold * 0.4
+        # move_up = performance_score > threshold * 0.8
+        # move_down = performance_score < threshold * 0.4
+        move_up =dis_to_origin > 0.8*threshold
+        move_down = dis_to_origin < 0.4*threshold
 
-        self.terrain_levels[env_ids] += 1 * move_up - 1 * move_down
+        # self.terrain_levels[env_ids] += 1 * move_up - 1 * move_down
+        self.terrain_levels[env_ids] += 1
+
         # 保持难度在合理范围
         self.terrain_levels[env_ids] = torch.where(
             self.terrain_levels[env_ids] >= self.max_terrain_level,
@@ -946,14 +956,14 @@ class HumanoidRobot(BaseTask):
 
         # 更新环境类别和目标
         self.env_class[env_ids] = self.terrain_class[self.terrain_levels[env_ids], self.terrain_types[env_ids]]
+        self.env_origins[env_ids] = self.terrain_origins[self.terrain_levels[env_ids], self.terrain_types[env_ids]]
+        
         temp = self.terrain_goals[self.terrain_levels, self.terrain_types]
         last_col = temp[:, -1].unsqueeze(1)
         self.env_goals[:] = torch.cat((temp, last_col.repeat(1, self.cfg.env.num_future_goal_obs, 1)), dim=1)[:]
         self.cur_goals = self._gather_cur_goals()
         self.next_goals = self._gather_cur_goals(future=1)
-
-
-
+        
     def _init_buffers(self):
         """ Initialize torch tensors which will contain simulation states and processed quantities
         """
@@ -1271,30 +1281,104 @@ class HumanoidRobot(BaseTask):
             self.env_origins[:, 1] = spacing * yy.flatten()[:self.num_envs]
             self.env_origins[:, 2] = 0.
         else:
+            # 标记：自定义环境起点
             self.custom_origins = True
+
+            # 每个环境的起点坐标 (x,y,z)，初始化为零
+            # shape: [num_envs, 3]
+            # 例如：如果有 4096 个并行环境，那么这里是一个 (4096, 3) 的张量
             self.env_origins = torch.zeros(self.num_envs, 3, device=self.device, requires_grad=False)
+
+            # 每个环境的类别 (class)，通常代表地形类别
+            # shape: [num_envs]
             self.env_class = torch.zeros(self.num_envs, device=self.device, requires_grad=False)
-            # put robots at the origins defined by the terrain
-            max_init_level = self.cfg.terrain.max_init_terrain_level # 2
-            if not self.cfg.terrain.curriculum: max_init_level = self.cfg.terrain.num_rows - 1
+
+            # ========== 随机化环境的地形等级与类别 ==========
+
+            # 最大初始化地形等级 (难度层数) 
+            # 默认取配置文件中的最大初始等级
+            max_init_level = self.cfg.terrain.max_init_terrain_level  # 例如 2
+
+            # 如果不启用 curriculum (课程学习)，则允许从所有地形行中采样
+            if not self.cfg.terrain.curriculum:
+                max_init_level = self.cfg.terrain.num_rows - 1
+
+            # 为每个环境随机分配一个地形等级 [0, max_init_level]
+            # shape: [num_envs]
             self.terrain_levels = torch.randint(0, max_init_level+1, (self.num_envs,), device=self.device)
-            self.terrain_types = torch.div(torch.arange(self.num_envs, device=self.device), (self.num_envs/self.cfg.terrain.num_cols), rounding_mode='floor').to(torch.long)
+
+            # 为每个环境分配地形类型
+            # 按列来划分：假设一共有 num_cols 列，每列是一种 terrain type
+            # torch.arange(self.num_envs) -> [0, 1, 2, ..., num_envs-1]
+            # 除以 (num_envs / num_cols) 再取 floor -> 得到 [0,...,num_cols-1]
+            # shape: [num_envs]
+            self.terrain_types = torch.div(
+                torch.arange(self.num_envs, device=self.device),
+                (self.num_envs/self.cfg.terrain.num_cols),
+                rounding_mode='floor'
+            ).to(torch.long)
+
+            # 保存最大 terrain 等级 (即 num_rows)
             self.max_terrain_level = self.cfg.terrain.num_rows
+
+            # 从 numpy 转换 terrain 的起点坐标表格
+            # terrain.env_origins: shape [num_rows, num_cols, 3]
+            # 每个地形格子都有一个起点 (x,y,z)
             self.terrain_origins = torch.from_numpy(self.terrain.env_origins).to(self.device).to(torch.float)
 
+            # 按照随机采样的 terrain_levels 和 terrain_types，给每个环境分配起点坐标
+            # 例如 terrain_origins[level, type] -> [3] [xyz]
+            # env_origins: shape [num_envs, 3]
             self.env_origins[:] = self.terrain_origins[self.terrain_levels, self.terrain_types]
+
+            # terrain_class: 保存每个地形格子的类别 (由 numpy 转 tensor)
+            # shape: [num_rows, num_cols]
             self.terrain_class = torch.from_numpy(self.terrain.terrain_type).to(self.device).to(torch.float)
+
+            # 为每个环境分配类别，存入 env_class
             self.env_class[:] = self.terrain_class[self.terrain_levels, self.terrain_types]
 
+            # ========== 设置目标点 (goals) ==========
+
+            # 从 numpy 转换 terrain 的目标点表格
+            # terrain.goals: shape [num_rows, num_cols, num_goals, 3]
             self.terrain_goals = torch.from_numpy(self.terrain.goals).to(self.device).to(torch.float)
-            self.env_goals = torch.zeros(self.num_envs, self.cfg.terrain.num_goals + self.cfg.env.num_future_goal_obs, 3, device=self.device, requires_grad=False)
+
+            # 每个环境的目标点缓存
+            # shape: [num_envs, num_goals + num_future_goal_obs, 3]
+            # num_future_goal_obs: 表示除了已有的目标，还会额外预测未来的目标点数量
+            self.env_goals = torch.zeros(
+                self.num_envs,
+                self.cfg.terrain.num_goals + self.cfg.env.num_future_goal_obs,
+                3,
+                device=self.device,
+                requires_grad=False
+            )
+
+            # 当前目标点的索引 (每个环境一个)
+            # shape: [num_envs], dtype = long
             self.cur_goal_idx = torch.zeros(self.num_envs, device=self.device, requires_grad=False, dtype=torch.long)
+
+            # temp: 获取每个环境的目标序列
+            # shape: [num_envs, num_goals, 3]
             temp = self.terrain_goals[self.terrain_levels, self.terrain_types]
+
+            # last_col: 每个环境的最后一个目标 (最后一列)
+            # shape: [num_envs, 1, 3]
             last_col = temp[:, -1].unsqueeze(1)
-            self.env_goals[:] = torch.cat((temp, last_col.repeat(1, self.cfg.env.num_future_goal_obs, 1)), dim=1)[:]
+
+            # 拼接：把 last_col 重复 num_future_goal_obs 次，追加到目标序列后
+            # shape: [num_envs, num_goals + num_future_goal_obs, 3]
+            self.env_goals[:] = torch.cat(
+                (temp, last_col.repeat(1, self.cfg.env.num_future_goal_obs, 1)), dim=1
+            )[:]
+
+            # 当前目标点
             self.cur_goals = self._gather_cur_goals()
+
+            # 下一个目标点 (future=1)
             self.next_goals = self._gather_cur_goals(future=1)
-            
+                
     def _parse_cfg(self, cfg):
         self.dt = self.cfg.control.decimation * self.sim_params.dt
         self.obs_scales = self.cfg.normalization.obs_scales
@@ -1568,7 +1652,24 @@ class HumanoidRobot(BaseTask):
         """到达目标奖励（指数衰减，与跟踪奖励一致）"""
         distance_to_goal = torch.norm(self.root_states[:, :2] - self.cur_goals[:, :2], dim=1)
         # 使用指数衰减，距离越近奖励越高
-        return torch.exp(-distance_to_goal / 0.2)  # 0.5是衰减参数
+        return torch.exp(-distance_to_goal / 0.2)
+    
+    def _reward_heading_tracking(self):
+        """朝向跟踪奖励 - 鼓励机器人朝向目标点"""
+        heading_error = wrap_to_pi(self.target_yaw - self.yaw)
+        return torch.exp(-torch.abs(heading_error) / 0.3)  # 朝向越准确奖励越高
+
+    def _reward_next_heading_tracking(self):
+        """朝向跟踪奖励 - 鼓励机器人朝向目标点"""
+        next_heading_error = wrap_to_pi(self.next_target_yaw - self.yaw)
+        return torch.exp(-torch.abs(next_heading_error) / 0.3)  # 朝向越准确奖励越高
+    
+    def _reward_bridge_center(self):
+        """独木桥居中奖励 - 鼓励机器人在桥中央行走"""
+        # 计算机器人相对于桥中心的位置
+        y_offset = torch.abs(self.root_states[:, 1] - self.cur_goals[:, 1])
+        # 距离桥中心越近奖励越高
+        return torch.exp(-y_offset / 0.3)
     
     # ---- add new rewards above -----
 

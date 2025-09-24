@@ -63,7 +63,7 @@ def play(args):
 
     env_cfg.terrain.num_rows = 5
     env_cfg.terrain.num_cols = 10
-    env_cfg.terrain.max_init_terrain_level = 1
+    env_cfg.terrain.max_init_terrain_level = 0
 
     env_cfg.terrain.height = [0.01, 0.02]
     
