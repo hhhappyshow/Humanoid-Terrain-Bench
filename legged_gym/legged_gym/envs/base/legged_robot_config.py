@@ -269,6 +269,30 @@ class LeggedRobotCfg(BaseConfig):
             feet_stumble = -1            # 脚部绊倒惩罚
             feet_edge = -1               # 脚部边缘惩罚
             
+            # 新增可选奖励（默认0，不影响现有训练；按需在特定地形开启）
+            # —— Flat 定向 ——
+            lateral_drift = 0.5          # 侧向漂移抑制（|v_y|）
+            yaw_stability = 0.5          # 偏航角速度抑制（|ω_z|）
+            stride_length = 0.3          # 步幅接近目标
+            gait_symmetry = 0.5          # 左右步态对称
+
+            # —— Wave 定向 ——
+            terrain_speed_match = 0.6   # 速度匹配地形复杂度
+            foot_clearance = 0.5         # 摆动期抬脚裕度
+            foot_impact = 0.5            # 落脚冲击小
+            com_inside_support = 0.5     # 质心落在支撑域附近
+
+            # —— 基础通用（代码已实现，此处补齐权重键） ——
+            termination = -1.0           # 终止惩罚（非超时）
+            dof_pos_limits = -0.05       # 关节位置接近极限惩罚
+            dof_vel_limits = -0.05       # 关节速度接近极限惩罚
+            torque_limits = -0.05        # 力矩接近极限惩罚
+            tracking_lin_vel = 0.8       # 线速度跟踪奖励
+            tracking_ang_vel = 0.4       # 角速度跟踪奖励
+            feet_air_time = 0.1          # 腾空时长奖励（更长步幅）
+            stand_still = -0.2           # 零指令时移动惩罚
+            feet_contact_forces = -0.2   # 过大接触力惩罚
+            
         only_positive_rewards = True     # 如果为True，负总奖励被裁剪为零（避免早期终止问题）
         tracking_sigma = 0.2            # 跟踪奖励 = exp(-error^2/sigma)
         soft_dof_pos_limit = 1.         # URDF限制的百分比，超过此限制的值会被惩罚

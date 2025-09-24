@@ -24,12 +24,14 @@ class combine_config:
         ]
 
         addition = [
-                [single[5],single[2],single[4],single[8]]
+                [single[5],single[2],single[4],single[8]],
+                [single[3],single[6]]
         ]
 
         proportions = [
-                ("single", 2, 1.0),
+                # ("single", 2, 1.0),
                 # ("single", 9, 0.4),
+                ("addition", 0, 1),
                 # ("multiplication", 0, 0.2),
         ]
 

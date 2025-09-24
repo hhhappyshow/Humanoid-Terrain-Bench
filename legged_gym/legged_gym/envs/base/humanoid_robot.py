@@ -282,9 +282,9 @@ class HumanoidRobot(BaseTask):
         self.target_pos_rel = self.cur_goals[:, :2] - self.root_states[:, :2]
         self.next_target_pos_rel = self.next_goals[:, :2] - self.root_states[:, :2]
         
-        print('cur_goals',self.cur_goals[:, :2])
-        print('env_origins', self.env_origins[:, :2])
-        print('root_states', self.root_states[:, :2])
+        # print('cur_goals',self.cur_goals[:, :2])
+        # print('env_origins', self.env_origins[:, :2])
+        # print('root_states', self.root_states[:, :2])
 
         norm = torch.norm(self.target_pos_rel, dim=-1, keepdim=True)
         target_vec_norm = self.target_pos_rel / (norm + 1e-5)
@@ -516,29 +516,29 @@ class HumanoidRobot(BaseTask):
         self.delta_yaw = self.target_yaw - self.yaw
         self.delta_next_yaw = self.next_target_yaw - self.yaw
         
-        if self.global_counter % 5 == 0:
+        # if self.global_counter % 5 == 0:
             # 添加调试信息
-            print("Robot position:", self.root_states[0, :2])  # 机器人位置 - 世界坐标系
-            print("Env origin:", self.env_origins[0, :2])      # 环境原点 - 世界坐标系
-            print("Base init state:", self.base_init_state[:2]) # 基础初始状态 - 相对环境原点坐标系
-            print("Current goal (relative):", self.cur_goals[0, :2])      # 当前目标点 - 相对环境原点坐标系
-            print("Next goal (relative):", self.next_goals[0, :2])        # 下一个目标点 - 相对环境原点坐标系
-            print("Current goal (world):", self.cur_goals[0, :2] + self.env_origins[0, :2])      # 当前目标点 - 世界坐标系
-            print("Next goal (world):", self.next_goals[0, :2] + self.env_origins[0, :2])        # 下一个目标点 - 世界坐标系
+            # print("Robot position:", self.root_states[0, :2])  # 机器人位置 - 世界坐标系
+            # print("Env origin:", self.env_origins[0, :2])      # 环境原点 - 世界坐标系
+            # print("Base init state:", self.base_init_state[:2]) # 基础初始状态 - 相对环境原点坐标系
+            # print("Current goal (relative):", self.cur_goals[0, :2])      # 当前目标点 - 相对环境原点坐标系
+            # print("Next goal (relative):", self.next_goals[0, :2])        # 下一个目标点 - 相对环境原点坐标系
+            # print("Current goal (world):", self.cur_goals[0, :2] + self.env_origins[0, :2])      # 当前目标点 - 世界坐标系
+            # print("Next goal (world):", self.next_goals[0, :2] + self.env_origins[0, :2])        # 下一个目标点 - 世界坐标系
             # print("Target pos rel:", self.target_pos_rel[0])   # 相对位置向量 - 机器人本体坐标系
-            print("Robot yaw:", self.yaw[0])                   # 机器人当前朝向 - 世界坐标系
-            print("Target yaw:", self.target_yaw[0])           # 目标朝向 - 世界坐标系
-            print("self.delta_yaw=",self.delta_yaw[0])
-            print("self.delta_next_yaw=",self.delta_next_yaw[0]) 
+            # print("Robot yaw:", self.yaw[0])                   # 机器人当前朝向 - 世界坐标系
+            # print("Target yaw:", self.target_yaw[0])           # 目标朝向 - 世界坐标系
+            # print("self.delta_yaw=",self.delta_yaw[0])
+            # print("self.delta_next_yaw=",self.delta_next_yaw[0]) 
             
-            print("######################################################################")
+            # print("######################################################################")
             
             # 添加速度和指令信息
-            print("Robot linear velocity:", self.base_lin_vel[0])  # 机器人线速度 - 机器人本体坐标系
-            print("Robot angular velocity:", self.base_ang_vel[0])  # 机器人角速度 - 机器人本体坐标系
-            print("Linear velocity command X:", self.commands[0, 0])  # X方向线速度指令 - 机器人本体坐标系
-            print("Angular velocity command Yaw:", self.commands[0, 2])  # Z轴角速度指令 - 机器人本体坐标系
-            print("Heading command:", self.commands[0, 3])  # 朝向指令 - 世界坐标系
+            # print("Robot linear velocity:", self.base_lin_vel[0])  # 机器人线速度 - 机器人本体坐标系
+            # print("Robot angular velocity:", self.base_ang_vel[0])  # 机器人角速度 - 机器人本体坐标系
+            # print("Linear velocity command X:", self.commands[0, 0])  # X方向线速度指令 - 机器人本体坐标系
+            # print("Angular velocity command Yaw:", self.commands[0, 2])  # Z轴角速度指令 - 机器人本体坐标系
+            # print("Heading command:", self.commands[0, 3])  # 朝向指令 - 世界坐标系
             
 
         obs_buf = torch.cat((#skill_vector, 
@@ -1635,7 +1635,7 @@ class HumanoidRobot(BaseTask):
         self.feet_air_time *= ~contact_filt
         return rew_airTime
     
-    def _reward_stumble(self):
+    def _reward_feet_stumble(self):
         # Penalize feet hitting vertical surfaces
         return torch.any(torch.norm(self.contact_forces[:, self.feet_indices, :2], dim=2) >\
              5 *torch.abs(self.contact_forces[:, self.feet_indices, 2]), dim=1)
@@ -1648,6 +1648,21 @@ class HumanoidRobot(BaseTask):
         # penalize high contact forces
         return torch.sum((torch.norm(self.contact_forces[:, self.feet_indices, :], dim=-1) -  self.cfg.rewards.max_contact_force).clip(min=0.), dim=1)
     
+    # 这几个是config里有，但没实现的奖励
+    def _reward_dof_error(self):
+        """关节位置误差（相对默认姿态）。"""
+        return torch.sum(torch.abs(self.dof_pos - self.default_dof_pos_all), dim=1)
+
+    def _reward_delta_torques(self):
+        """力矩变化率（相邻步之间的差）。"""
+        return torch.sum(torch.abs(self.torques - self.last_torques), dim=1)
+    
+    def _reward_feet_edge(self):
+        """脚部边缘惩罚占位：若无边缘检测，返回0（不影响训练）。"""
+        return torch.zeros(self.num_envs, device=self.device)
+
+    # kelun添加的reward
+
     def _reward_reach_goal(self):
         """到达目标奖励（指数衰减，与跟踪奖励一致）"""
         distance_to_goal = torch.norm(self.root_states[:, :2] - self.cur_goals[:, :2], dim=1)
@@ -1664,14 +1679,82 @@ class HumanoidRobot(BaseTask):
         next_heading_error = wrap_to_pi(self.next_target_yaw - self.yaw)
         return torch.exp(-torch.abs(next_heading_error) / 0.3)  # 朝向越准确奖励越高
     
-    def _reward_bridge_center(self):
-        """独木桥居中奖励 - 鼓励机器人在桥中央行走"""
-        # 计算机器人相对于桥中心的位置
-        y_offset = torch.abs(self.root_states[:, 1] - self.cur_goals[:, 1])
-        # 距离桥中心越近奖励越高
-        return torch.exp(-y_offset / 0.3)
     
     # ---- add new rewards above -----
+
+ 
+    
+    # def _reward_bridge_center(self):
+    #     """独木桥居中奖励 - 鼓励机器人在桥中央行走"""
+    #     # 计算机器人相对于桥中心的位置
+    #     y_offset = torch.abs(self.root_states[:, 1] - self.cur_goals[:, 1])
+    #     # 距离桥中心越近奖励越高
+    #     return torch.exp(-y_offset / 0.3)
+
+    # ===== Flat terrain oriented rewards =====
+    def _reward_lateral_drift(self):
+        """抑制侧向漂移 vy。"""
+        vy = torch.abs(self.base_lin_vel[:, 1])
+        return torch.exp(-vy / 0.2)
+
+    def _reward_yaw_stability(self):
+        """抑制不必要的偏航角速度。"""
+        wz = torch.abs(self.base_ang_vel[:, 2])
+        return torch.exp(-wz / 0.5)
+
+    def _reward_stride_length(self):
+        """步幅接近目标（基于两足水平距离估计）。"""
+        left_pos = self.rigid_body_states[:, self.feet_indices[0], :2]
+        right_pos = self.rigid_body_states[:, self.feet_indices[1], :2]
+        stride = torch.norm(left_pos - right_pos, dim=1)
+        target = 0.5
+        return torch.exp(-torch.abs(stride - target) / 0.15)
+
+    def _reward_gait_symmetry(self):
+        """左右脚接触节律对称（使用接触历史缓存）。"""
+        # contact_buf shape: [num_envs, contact_buf_len, 2]
+        if hasattr(self, "contact_buf"):
+            hist = self.contact_buf.float()
+            left_sum = torch.sum(hist[:, :, 0], dim=1)
+            right_sum = torch.sum(hist[:, :, 1], dim=1)
+            diff = torch.abs(left_sum - right_sum)
+            return torch.exp(-diff / (hist.shape[1] + 1e-6))
+        else:
+            return torch.ones(self.num_envs, device=self.device)
+
+    # ===== Wave terrain oriented rewards =====
+    def _reward_terrain_speed_match(self):
+        """速度匹配地形复杂度（起伏大 -> 降低目标速度）。"""
+        complexity = self._analyze_terrain_complexity()
+        max_speed = getattr(self.cfg, 'max_speed', 1.0)
+        min_speed = getattr(self.cfg, 'min_speed', 0.2)
+        v_target = max_speed - complexity * (max_speed - min_speed)
+        vx = torch.abs(self.base_lin_vel[:, 0])
+        return torch.exp(-torch.abs(vx - v_target) / 0.3)
+
+    def _reward_foot_clearance(self):
+        """摆动期抬脚高度充足，减少绊脚（简单近似）。"""
+        feet_z = self.rigid_body_states[:, self.feet_indices, 2]
+        contact = (self.contact_forces[:, self.feet_indices, 2] > 1.).float()
+        swing_mask = 1.0 - contact
+        clearance = torch.clamp(feet_z - 0.06, min=0.0)
+        return torch.sum(clearance * swing_mask, dim=1)
+
+    def _reward_foot_impact(self):
+        """落脚冲击小（以接触期竖直速度近似）。"""
+        feet_vz = self.rigid_body_states[:, self.feet_indices, 9]  # lin vel z 索引=9
+        contact = (self.contact_forces[:, self.feet_indices, 2] > 1.).float()
+        impact = torch.sum(torch.abs(feet_vz) * contact, dim=1)
+        return torch.exp(-impact / 0.5)
+
+    def _reward_com_inside_support(self):
+        """基座投影靠近支撑多边形（用两足中点近似）。"""
+        base_xy = self.root_states[:, :2]
+        feet_xy = self.rigid_body_states[:, self.feet_indices, :2]
+        mid = torch.mean(feet_xy, dim=1)
+        dev = torch.norm(base_xy - mid, dim=1)
+        any_contact = (self.contact_forces[:, self.feet_indices, 2] > 1.).any(dim=1).float()
+        return torch.exp(-dev / 0.2) * any_contact
 
     # def _reward_penalty_slippage(self):
     #     """滑移惩罚奖励 - 惩罚脚部与地面接触时的滑移行为"""
