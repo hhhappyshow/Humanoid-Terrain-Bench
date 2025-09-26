@@ -258,7 +258,8 @@ class LeggedRobotCfg(BaseConfig):
             # 正则化奖励（通常为负值，起惩罚作用）
             lin_vel_z = -1.0              # 垂直速度惩罚（避免跳跃）
             ang_vel_xy = -0.05            # 滚转俯仰角速度惩罚（保持稳定）
-            orientation = -1.             # 姿态惩罚
+            orientation = -1.  
+            base_height = -1.           # 新，姿态惩罚
             dof_acc = -2.5e-7            # 关节加速度惩罚（平滑运动）
             collision = -10.              # 碰撞惩罚
             action_rate = -0.1            # 动作变化率惩罚（平滑控制）

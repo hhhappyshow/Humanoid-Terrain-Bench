@@ -922,38 +922,54 @@ class HumanoidRobot(BaseTask):
         self.gym.set_actor_root_state_tensor(self.sim, gymtorch.unwrap_tensor(self.root_states))
 
     def _update_terrain_curriculum(self, env_ids):
-        """智能课程学习：结合地形复杂度和移动距离动态调整难度"""
+        """简单的课程学习：连续成功3次升级，连续失败2次降级"""
         if not self.init_done:
             return
-
-        # 计算距离
-        dis_to_origin = torch.norm(self.root_states[env_ids, :2] - self.env_origins[env_ids, :2], dim=1)
-        # 获取平均地形复杂度
-        avg_complexity = torch.mean(self.terrain_complexity_history[env_ids], dim=1)
-        # terrain_complexity = self._analyze_terrain_complexity()[env_ids]  # 或自定义复杂度函数
-        terrain_complexity = avg_complexity  # 使用最近N步均值
-
-        # 综合评估分数：距离 × (1 + 复杂度)
-        performance_score = dis_to_origin * (1 + terrain_complexity)
-        # threshold = self.commands[env_ids, 0] * self.cfg.env.episode_length_s * 1.2
-        threshold = self.commands[env_ids, 0] * self.cfg.env.episode_length_s
-
-        # 晋级/降级判定
-        # move_up = performance_score > threshold * 0.8
-        # move_down = performance_score < threshold * 0.4
-        move_up =dis_to_origin > 0.8*threshold
-        move_down = dis_to_origin < 0.4*threshold
-
-        # self.terrain_levels[env_ids] += 1 * move_up - 1 * move_down
-        self.terrain_levels[env_ids] += 1
-
+        
+        # 初始化环境级别的连续成功/失败计数器
+        if not hasattr(self, 'env_consecutive_success'):
+            self.env_consecutive_success = torch.zeros(self.num_envs, dtype=torch.int, device=self.device)
+            self.env_consecutive_failure = torch.zeros(self.num_envs, dtype=torch.int, device=self.device)
+        
+        # 课程学习参数
+        success_threshold = 3
+        failure_threshold = 2
+        
+        # 检查每个需要重置的环境
+        for env_id in env_ids:
+            env_id = env_id.item()
+            
+            # 判断这次episode是否成功（到达所有目标点）
+            is_success = self.cur_goal_idx[env_id] >= self.cfg.terrain.num_goals
+            
+            if is_success:
+                # 成功：增加连续成功计数，重置连续失败计数
+                self.env_consecutive_success[env_id] += 1
+                self.env_consecutive_failure[env_id] = 0
+                
+                # 检查是否达到升级条件
+                if self.env_consecutive_success[env_id] >= success_threshold:
+                    self.terrain_levels[env_id] += 1
+                    self.env_consecutive_success[env_id] = 0  # 重置计数器
+                    # print(f"环境 {env_id} 连续成功{success_threshold}次，升级到等级 {self.terrain_levels[env_id]}")
+            else:
+                # 失败：增加连续失败计数，重置连续成功计数
+                self.env_consecutive_failure[env_id] += 1
+                self.env_consecutive_success[env_id] = 0
+                
+                # 检查是否达到降级条件
+                if self.env_consecutive_failure[env_id] >= failure_threshold:
+                    self.terrain_levels[env_id] -= 1
+                    self.env_consecutive_failure[env_id] = 0  # 重置计数器
+                    # print(f"环境 {env_id} 连续失败{failure_threshold}次，降级到等级 {self.terrain_levels[env_id]}")
+        
         # 保持难度在合理范围
         self.terrain_levels[env_ids] = torch.where(
             self.terrain_levels[env_ids] >= self.max_terrain_level,
             torch.randint_like(self.terrain_levels[env_ids], self.max_terrain_level),
             torch.clip(self.terrain_levels[env_ids], 0)
         )
-
+        
         # 更新环境类别和目标
         self.env_class[env_ids] = self.terrain_class[self.terrain_levels[env_ids], self.terrain_types[env_ids]]
         self.env_origins[env_ids] = self.terrain_origins[self.terrain_levels[env_ids], self.terrain_types[env_ids]]
@@ -963,6 +979,7 @@ class HumanoidRobot(BaseTask):
         self.env_goals[:] = torch.cat((temp, last_col.repeat(1, self.cfg.env.num_future_goal_obs, 1)), dim=1)[:]
         self.cur_goals = self._gather_cur_goals()
         self.next_goals = self._gather_cur_goals(future=1)
+
         
     def _init_buffers(self):
         """ Initialize torch tensors which will contain simulation states and processed quantities
