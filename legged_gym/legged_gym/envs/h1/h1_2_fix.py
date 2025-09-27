@@ -210,7 +210,8 @@ class H1_2FixCfg( LeggedRobotCfg ):
         max_contact_force = 100.       # 最大接触力（超过此值将被惩罚）
         is_play = False               # 非游戏模式
     # 目标抬脚高度阈值（米）。只有当脚的相对高度超过该阈值时会产生正奖励。
-    foot_clearance_target = 0.30
+        foot_clearance_target = 0.18  # 鼓励抬脚高度
+        ground_scale = 1.0            # 地面接触奖励缩放因子，鼓励在较低地面上抬脚
     
 
 

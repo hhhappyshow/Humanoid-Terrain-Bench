@@ -1002,20 +1002,20 @@ class HumanoidRobot(BaseTask):
         self.rigid_body_states = gymtorch.wrap_tensor(rigid_body_state_tensor).view(self.num_envs, -1, 13)
         self.dof_state = gymtorch.wrap_tensor(dof_state_tensor).view(self.num_envs, -1, 2)
 
-        # debug: optionally print rigid_body_states shape and a small sample plus feet positions
-        try:
-            import os
-            if os.environ.get('HUMANOID_DEBUG', '0') == '1':
-                print(f"DEBUG: rigid_body_states.shape = {self.rigid_body_states.shape}")
-                # print the first environment, first 6 bodies' pos (concise)
-                sample = self.rigid_body_states[0, :6, :3].cpu().numpy()
-                print("DEBUG: sample rigid_body_states[0,:6,:3]=\n", sample)
-                if hasattr(self, 'feet_indices') and self.feet_indices.numel() > 0:
-                    feet_pos = self.rigid_body_states[:, self.feet_indices, :3]
-                    print("DEBUG: feet_pos.shape=", feet_pos.shape)
-                    print("DEBUG: feet_pos[0]=\n", feet_pos[0].cpu().numpy())
-        except Exception:
-            pass
+        # # debug: optionally print rigid_body_states shape and a small sample plus feet positions
+        # try:
+        #     import os
+        #     if os.environ.get('HUMANOID_DEBUG', '0') == '1':
+        #         print(f"DEBUG: rigid_body_states.shape = {self.rigid_body_states.shape}")
+        #         # print the first environment, first 6 bodies' pos (concise)
+        #         sample = self.rigid_body_states[0, :6, :3].cpu().numpy()
+        #         print("DEBUG: sample rigid_body_states[0,:6,:3]=\n", sample)
+        #         if hasattr(self, 'feet_indices') and self.feet_indices.numel() > 0:
+        #             feet_pos = self.rigid_body_states[:, self.feet_indices, :3]
+        #             print("DEBUG: feet_pos.shape=", feet_pos.shape)
+        #             print("DEBUG: feet_pos[0]=\n", feet_pos[0].cpu().numpy())
+        # except Exception:
+        #     pass
 
         self.dof_pos = self.dof_state[...,0]
         self.dof_vel = self.dof_state[..., 1]
@@ -1228,13 +1228,13 @@ class HumanoidRobot(BaseTask):
         knee_names = [s for s in body_names if self.cfg.asset.knee_name in s]
 
         # --- debug: optionally print asset body names and detected foot names ---
-        try:
-            import os
-            if os.environ.get('HUMANOID_DEBUG', '0') == '1':
-                print("DEBUG: asset rigid body names (first 100 chars):", str(body_names)[:1000])
-                print("DEBUG: detected feet_names:", feet_names)
-        except Exception:
-            pass
+        # try:
+        #     import os
+        #     if os.environ.get('HUMANOID_DEBUG', '0') == '1':
+        #         print("DEBUG: asset rigid body names (first 100 chars):", str(body_names)[:1000])
+        #         print("DEBUG: detected feet_names:", feet_names)
+        # except Exception:
+        #     pass
         
         penalized_contact_names = []
         for name in self.cfg.asset.penalize_contacts_on:
@@ -1295,13 +1295,13 @@ class HumanoidRobot(BaseTask):
             self.feet_indices[i] = self.gym.find_actor_rigid_body_handle(self.envs[0], self.actor_handles[0], feet_names[i])
 
         # debug: print feet_indices when requested
-        try:
-            import os
-            if os.environ.get('HUMANOID_DEBUG', '0') == '1':
-                # move to cpu for safe printing
-                print("DEBUG: feet_indices:", self.feet_indices.cpu().numpy())
-        except Exception:
-            pass
+        # try:
+        #     import os
+        #     if os.environ.get('HUMANOID_DEBUG', '0') == '1':
+        #         # move to cpu for safe printing
+        #         print("DEBUG: feet_indices:", self.feet_indices.cpu().numpy())
+        # except Exception:
+        #     pass
 
         self.knee_indices = torch.zeros(len(knee_names), dtype=torch.long, device=self.device, requires_grad=False)
         for i in range(len(knee_names)):
@@ -1701,32 +1701,157 @@ class HumanoidRobot(BaseTask):
         return torch.sum((torch.norm(self.contact_forces[:, self.feet_indices, :], dim=-1) -  self.cfg.rewards.max_contact_force).clip(min=0.), dim=1)
 
 # ----------------------new reward----------------
+    def _reward_stand_still(self): #h1有，但0
+
+        # Penalize motion at zero commands
+
+        return torch.sum(torch.abs(self.dof_pos - self.default_dof_pos), dim=1) * (torch.norm(self.commands[:, :2], dim=1) < 0.1)
+
+
+
+    # remaining rewards not present in h1_2_fix (kept after h1-ordered ones)
+
+    def _reward_dof_pos_limits(self): #无
+
+        # Penalize dof positions too close to the limit
+
+        out_of_limits = -(self.dof_pos - self.dof_pos_limits[:, 0]).clip(max=0.) # lower limit
+
+        out_of_limits += (self.dof_pos - self.dof_pos_limits[:, 1]).clip(min=0.)
+
+        return torch.sum(out_of_limits, dim=1)
+
+
+
+    def _reward_dof_vel_limits(self): #无
+
+        # Penalize dof velocities too close to the limit
+
+        # clip to max error = 1 rad/s per joint to avoid huge penalties
+
+        return torch.sum((torch.abs(self.dof_vel) - self.dof_vel_limits*self.cfg.rewards.soft_dof_vel_limit).clip(min=0., max=1.), dim=1)
+
+
+
+    def _reward_torque_limits(self): #无
+
+        # penalize torques too close to the limit
+
+        return torch.sum((torch.abs(self.torques) - self.torque_limits*self.cfg.rewards.soft_torque_limit).clip(min=0.), dim=1)
+
+
+
+    def _reward_feet_contact_forces(self): #无
+
+        # penalize high contact forces
+
+        return torch.sum((torch.norm(self.contact_forces[:, self.feet_indices, :], dim=-1) -  self.cfg.rewards.max_contact_force).clip(min=0.), dim=1)
+
+
+
+# ----------------------new reward----------------
+
+    # def _reward_foot_clearance(self): #h1有
+
+    #     """
+    #     Reward lifting the feet when they are in swing (not contacting the ground).
+    #     For each foot that is not contacting, compute the vertical clearance relative to the
+    #     ground height under the foot. Only positive clearance above a small target contributes
+    #     to the reward so that small/noise motions are not rewarded.
+
+    #     Returns:
+    #         torch.Tensor: shape (num_envs,) reward per environment
+    #     """
+
+    #     # feet world positions: shape [num_envs, n_feet, 3]
+    #     feet_pos = self.rigid_body_states[:, self.feet_indices, :3]
+    #     # feet z (world)
+    #     foot_z = feet_pos[:, :, 2]
+
+    #     # --- sample ground height under each foot from height_samples ---
+    #     # map world x,y to height_samples grid indices (same convention as _get_heights)
+    #     points = feet_pos[:, :, :2].clone()
+    #     points += self.terrain.cfg.border_size
+    #     points = (points / self.terrain.cfg.horizontal_scale).long()
+
+    #     px = points[:, :, 0].view(-1)
+    #     py = points[:, :, 1].view(-1)
+
+    #     # clamp indices to valid range (height_samples has shape [rows, cols])
+    #     px = torch.clip(px, 0, self.height_samples.shape[0]-2)
+    #     py = torch.clip(py, 0, self.height_samples.shape[1]-2)
+
+    #     heights1 = self.height_samples[px, py]
+    #     heights2 = self.height_samples[px+1, py]
+    #     heights3 = self.height_samples[px, py+1]
+    #     ground_h = torch.min(heights1, heights2)
+    #     ground_h = torch.min(ground_h, heights3)
+    #     # reshape back to [num_envs, n_feet] and scale by vertical_scale (same as _get_heights)
+    #     n_env = self.num_envs
+    #     n_feet = self.feet_indices.shape[0]
+    #     ground_h = ground_h.view(n_env, n_feet) * self.terrain.cfg.vertical_scale
+
+    #     # clearance of each foot relative to ground (can be negative)
+    #     clearance = foot_z - ground_h
+
+    #     # detect contacts for feet (same threshold as other rewards)
+    #     contact = self.contact_forces[:, self.feet_indices, 2] > 1.0
+    #     swing_mask = ~contact
+
+    #     # only reward clearance above a small target offset. The target is provided by cfg.rewards
+    #     # (e.g. 0.15 m). Clamp negative values to zero and sum across feet, then normalize.
+    #     target = getattr(self.cfg.rewards, 'foot_clearance_target', 0.15)
+    #     per_foot_reward = torch.clamp(clearance - target, min=0.0) * swing_mask
+
+    #     # average reward per foot
+
+    #     n_feet = self.feet_indices.shape[0] if hasattr(self, 'feet_indices') else 1
+    #     rew = torch.sum(per_foot_reward, dim=1) / float(max(1, n_feet))
+
+    #     return rew
+
+
 
     def _reward_foot_clearance(self): #h1有
         """
-        Reward lifting the feet when they are in swing (not contacting the ground).
-        For each foot that is not contacting, compute the vertical clearance relative to the
-        ground height under the foot. Only positive clearance above a small target contributes
-        to the reward so that small/noise motions are not rewarded.
+        Reward based on the height difference between the two feet.
+        For each environment: compute absolute height difference between the first two feet.
+        Then sample the ground height under the lower of the two feet. If that ground height
+        is lower, we reward larger foot-height-differences more (scaled by a configurable
+        ground scale). The function is resilient to missing feet indices.
 
         Returns:
             torch.Tensor: shape (num_envs,) reward per environment
         """
+        # require at least two feet
+        if not hasattr(self, 'feet_indices') or self.feet_indices.shape[0] < 2:
+            return torch.zeros(self.num_envs, device=self.device)
+
         # feet world positions: shape [num_envs, n_feet, 3]
         feet_pos = self.rigid_body_states[:, self.feet_indices, :3]
-        # feet z (world)
+        # feet z (world): shape [num_envs, n_feet]
         foot_z = feet_pos[:, :, 2]
 
-        # --- sample ground height under each foot from height_samples ---
-        # map world x,y to height_samples grid indices (same convention as _get_heights)
-        points = feet_pos[:, :, :2].clone()
+        # compute absolute difference between the first two feet
+        # shape: [num_envs]
+        try:
+            height_diff = torch.abs(foot_z[:, 1] - foot_z[:, 0])
+        except Exception:
+            # fallback: if indexing fails, return zeros
+            return torch.zeros(self.num_envs, device=self.device)
+        # print("height_diff=", height_diff)
+
+        # identify index (0 or 1) of the lower foot per environment
+        lower_is_second = (foot_z[:, 1] < foot_z[:, 0])
+
+        # prepare points for sampling ground height under the lower foot
+        pts = torch.where(lower_is_second.unsqueeze(1), feet_pos[:, 1, :2], feet_pos[:, 0, :2])
+        points = pts.clone()
         points += self.terrain.cfg.border_size
         points = (points / self.terrain.cfg.horizontal_scale).long()
 
-        px = points[:, :, 0].view(-1)
-        py = points[:, :, 1].view(-1)
-
-        # clamp indices to valid range (height_samples has shape [rows, cols])
+        px = points[:, 0].view(-1)
+        py = points[:, 1].view(-1)
         px = torch.clip(px, 0, self.height_samples.shape[0]-2)
         py = torch.clip(py, 0, self.height_samples.shape[1]-2)
 
@@ -1735,24 +1860,23 @@ class HumanoidRobot(BaseTask):
         heights3 = self.height_samples[px, py+1]
         ground_h = torch.min(heights1, heights2)
         ground_h = torch.min(ground_h, heights3)
-        # reshape back to [num_envs, n_feet] and scale by vertical_scale (same as _get_heights)
-        n_env = self.num_envs
-        n_feet = self.feet_indices.shape[0]
-        ground_h = ground_h.view(n_env, n_feet) * self.terrain.cfg.vertical_scale
+        # shape back to [num_envs]
+        ground_h = ground_h.view(self.num_envs) * self.terrain.cfg.vertical_scale
 
-        # clearance of each foot relative to ground (can be negative)
-        clearance = foot_z - ground_h
+        # lower ground -> more reward scaling. Use a configurable scale factor.
+        ground_scale = getattr(self.cfg.rewards, 'foot_clearance_ground_scale', 1.0)
+        # Normalize ground_h relative to some reference (e.g., terrain vertical_scale is already applied).
+        # We'll map lower ground to larger multiplier: multiplier = 1.0 + ground_scale * (-ground_h)
+        # but clamp to non-negative multipliers
+        multiplier = 1.0 + ground_scale * (-ground_h)
+        # print("multiplier=", multiplier)
 
-        # detect contacts for feet (same threshold as other rewards)
-        contact = self.contact_forces[:, self.feet_indices, 2] > 1.0
-        swing_mask = ~contact
-
-        # only reward clearance above a small target offset. The target is provided by cfg.rewards
-        # (e.g. 0.15 m). Clamp negative values to zero and sum across feet, then normalize.
+        # only reward clearance above target
         target = getattr(self.cfg.rewards, 'foot_clearance_target', 0.15)
-        per_foot_reward = torch.clamp(clearance - target, min=0.0) * swing_mask
+        base_reward = torch.clamp(height_diff - target, min=0.0)
 
-        # average reward per foot
-        n_feet = self.feet_indices.shape[0] if hasattr(self, 'feet_indices') else 1
-        rew = torch.sum(per_foot_reward, dim=1) / float(max(1, n_feet))
+        # final reward: base_reward scaled by ground multiplier and masked
+        rew = base_reward * multiplier
+        # print("foot_clearance reward=", rew)
+
         return rew
