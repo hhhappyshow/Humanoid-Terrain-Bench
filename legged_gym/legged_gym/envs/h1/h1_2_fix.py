@@ -192,8 +192,9 @@ class H1_2FixCfg( LeggedRobotCfg ):
             collision = -1.0           # 碰撞惩罚
             base_height = -0.          # 恢复：不惩罚基座高度
             feet_air_time = 1.0        # 恢复原始权重
-            feet_stumble = -0.0        # 恢复：不惩罚绊倒
+            stumble = -0.0        # 恢复：不惩罚绊倒
             stand_still = -0.          # 恢复：不惩罚静止
+            foot_clearance = 1        # 鼓励抬脚高度（当脚处于摆动时）
             
             # reach_goal = 1.0           # 到达目标奖励
             # heading_tracking = 1.0      # 朝向跟踪奖励
@@ -208,6 +209,8 @@ class H1_2FixCfg( LeggedRobotCfg ):
         base_height_target = 1.        # 目标基座高度（米）
         max_contact_force = 100.       # 最大接触力（超过此值将被惩罚）
         is_play = False               # 非游戏模式
+    # 目标抬脚高度阈值（米）。只有当脚的相对高度超过该阈值时会产生正奖励。
+    foot_clearance_target = 0.30
     
 
 

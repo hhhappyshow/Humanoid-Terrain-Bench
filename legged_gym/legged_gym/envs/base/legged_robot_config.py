@@ -255,44 +255,25 @@ class LeggedRobotCfg(BaseConfig):
         class scales:
             """各项奖励的权重系数"""
             
-            # 正则化奖励（通常为负值，起惩罚作用）
-            lin_vel_z = -1.0              # 垂直速度惩罚（避免跳跃）
-            ang_vel_xy = -0.05            # 滚转俯仰角速度惩罚（保持稳定）
-            orientation = -1.  
-            base_height = -1.           # 新，姿态惩罚
-            dof_acc = -2.5e-7            # 关节加速度惩罚（平滑运动）
-            collision = -10.              # 碰撞惩罚
-            action_rate = -0.1            # 动作变化率惩罚（平滑控制）
-            delta_torques = -1.0e-7       # 力矩变化惩罚
-            torques = -0.00001           # 力矩大小惩罚（节能）
-            # hip_pos = -0.5             # 髋关节位置惩罚（注释掉）
-            dof_error = -0.04            # 关节误差惩罚
-            feet_stumble = -1            # 脚部绊倒惩罚
-            feet_edge = -1               # 脚部边缘惩罚
-            
-            # 新增可选奖励（默认0，不影响现有训练；按需在特定地形开启）
-            # —— Flat 定向 ——
-            lateral_drift = 0.5          # 侧向漂移抑制（|v_y|）
-            yaw_stability = 0.5          # 偏航角速度抑制（|ω_z|）
-            stride_length = 0.3          # 步幅接近目标
-            gait_symmetry = 0.5          # 左右步态对称
+            # regularization rewards (present ones first to match humanoid_robot.py order)
+            lin_vel_z = -1.0 #有
+            ang_vel_xy = -0.05 #有
+            orientation = -1. #有
+            dof_acc = -2.5e-7 #有
+            collision = -10. #有
+            action_rate = -0.1 #有
+            torques = -0.00001 #有
 
-            # —— Wave 定向 ——
-            terrain_speed_match = 0.6   # 速度匹配地形复杂度
-            foot_clearance = 0.5         # 摆动期抬脚裕度
-            foot_impact = 0.5            # 落脚冲击小
-            com_inside_support = 0.5     # 质心落在支撑域附近
+            # tracking rewards
+            tracking_goal_vel = 1.5 #无
+            tracking_yaw = 0.5 #无
 
-            # —— 基础通用（代码已实现，此处补齐权重键） ——
-            termination = -1.0           # 终止惩罚（非超时）
-            dof_pos_limits = -0.05       # 关节位置接近极限惩罚
-            dof_vel_limits = -0.05       # 关节速度接近极限惩罚
-            torque_limits = -0.05        # 力矩接近极限惩罚
-            tracking_lin_vel = 0.8       # 线速度跟踪奖励
-            tracking_ang_vel = 0.4       # 角速度跟踪奖励
-            feet_air_time = 0.1          # 腾空时长奖励（更长步幅）
-            stand_still = -0.2           # 零指令时移动惩罚
-            feet_contact_forces = -0.2   # 过大接触力惩罚
+            # other / unused or missing-mapped scales
+            delta_torques = -1.0e-7 #无
+            # hip_pos = -0.5
+            dof_error = -0.04 #无
+            feet_stumble = -1 #无
+            feet_edge = -1 #无
             
         only_positive_rewards = True     # 如果为True，负总奖励被裁剪为零（避免早期终止问题）
         tracking_sigma = 0.2            # 跟踪奖励 = exp(-error^2/sigma)

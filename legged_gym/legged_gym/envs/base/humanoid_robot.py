@@ -1571,75 +1571,61 @@ class HumanoidRobot(BaseTask):
         heights_data = torch.min(heights_data, heights3_data)
 
         return heights.view(self.num_envs, -1) * self.terrain.cfg.vertical_scale, heights_data.view(self.num_envs, -1) * self.terrain.cfg.vertical_scale
-
-    #------------ reward functions----------------
-    def _reward_lin_vel_z(self):
-        # Penalize z axis base linear velocity
-        return torch.square(self.base_lin_vel[:, 2])
     
-    def _reward_ang_vel_xy(self):
-        # Penalize xy axes base angular velocity
-        return torch.sum(torch.square(self.base_ang_vel[:, :2]), dim=1)
     
-    def _reward_orientation(self):
-        # Penalize non flat base orientation
-        return torch.sum(torch.square(self.projected_gravity[:, :2]), dim=1)
-
-    def _reward_base_height(self):
-        # Penalize base height away from target
-        base_height = torch.mean(self.root_states[:, 2].unsqueeze(1) - self.measured_heights, dim=1)
-        return torch.square(base_height - self.cfg.rewards.base_height_target)
-    
-    def _reward_torques(self):
-        # Penalize torques
-        return torch.sum(torch.square(self.torques), dim=1)
-
-    def _reward_dof_vel(self):
-        # Penalize dof velocities
-        return torch.sum(torch.square(self.dof_vel), dim=1)
-    
-    def _reward_dof_acc(self):
-        # Penalize dof accelerations
-        return torch.sum(torch.square((self.last_dof_vel - self.dof_vel) / self.dt), dim=1)
-    
-    def _reward_action_rate(self):
-        # Penalize changes in actions
-        return torch.sum(torch.square(self.last_actions - self.actions), dim=1)
-    
-    def _reward_collision(self):
-        # Penalize collisions on selected bodies
-        return torch.sum(1.*(torch.norm(self.contact_forces[:, self.penalised_contact_indices, :], dim=-1) > 0.1), dim=1)
-    
-    def _reward_termination(self):
+    #------------reward functions (ordered to match h1_2_fix scales)----------------
+    def _reward_termination(self): #h1有，但0
         # Terminal reward / penalty
         return self.reset_buf * ~self.time_out_buf
-    
-    def _reward_dof_pos_limits(self):
-        # Penalize dof positions too close to the limit
-        out_of_limits = -(self.dof_pos - self.dof_pos_limits[:, 0]).clip(max=0.) # lower limit
-        out_of_limits += (self.dof_pos - self.dof_pos_limits[:, 1]).clip(min=0.)
-        return torch.sum(out_of_limits, dim=1)
 
-    def _reward_dof_vel_limits(self):
-        # Penalize dof velocities too close to the limit
-        # clip to max error = 1 rad/s per joint to avoid huge penalties
-        return torch.sum((torch.abs(self.dof_vel) - self.dof_vel_limits*self.cfg.rewards.soft_dof_vel_limit).clip(min=0., max=1.), dim=1)
-
-    def _reward_torque_limits(self):
-        # penalize torques too close to the limit
-        return torch.sum((torch.abs(self.torques) - self.torque_limits*self.cfg.rewards.soft_torque_limit).clip(min=0.), dim=1)
-
-    def _reward_tracking_lin_vel(self):
+    def _reward_tracking_lin_vel(self): #h1有
         # Tracking of linear velocity commands (xy axes)
         lin_vel_error = torch.sum(torch.square(self.commands[:, :2] - self.base_lin_vel[:, :2]), dim=1)
         return torch.exp(-lin_vel_error/self.cfg.rewards.tracking_sigma)
-    
-    def _reward_tracking_ang_vel(self):
-        # Tracking of angular velocity commands (yaw) 
+
+    def _reward_tracking_ang_vel(self): #h1有
+        # Tracking of angular velocity commands (yaw)
         ang_vel_error = torch.square(self.commands[:, 2] - self.base_ang_vel[:, 2])
         return torch.exp(-ang_vel_error/self.cfg.rewards.tracking_sigma)
 
-    def _reward_feet_air_time(self):
+    def _reward_lin_vel_z(self): #h1有
+        # Penalize z axis base linear velocity
+        return torch.square(self.base_lin_vel[:, 2])
+
+    def _reward_ang_vel_xy(self): #h1有
+        # Penalize xy axes base angular velocity
+        return torch.sum(torch.square(self.base_ang_vel[:, :2]), dim=1)
+
+    def _reward_orientation(self): #h1有，但0
+        # Penalize non flat base orientation
+        return torch.sum(torch.square(self.projected_gravity[:, :2]), dim=1)
+
+    def _reward_torques(self): #h1有
+        # Penalize torques
+        return torch.sum(torch.square(self.torques), dim=1)
+
+    def _reward_dof_vel(self): #h1有，但0
+        # Penalize dof velocities
+        return torch.sum(torch.square(self.dof_vel), dim=1)
+
+    def _reward_dof_acc(self): #h1有
+        # Penalize dof accelerations
+        return torch.sum(torch.square((self.last_dof_vel - self.dof_vel) / self.dt), dim=1)
+
+    def _reward_action_rate(self): #h1有
+        # Penalize changes in actions
+        return torch.sum(torch.square(self.last_actions - self.actions), dim=1)
+
+    def _reward_collision(self): #h1有
+        # Penalize collisions on selected bodies
+        return torch.sum(1.*(torch.norm(self.contact_forces[:, self.penalised_contact_indices, :], dim=-1) > 0.1), dim=1)
+
+    def _reward_base_height(self): #h1有，但0
+        # Penalize base height away from target
+        base_height = torch.mean(self.root_states[:, 2].unsqueeze(1) - self.measured_heights, dim=1)
+        return torch.square(base_height - self.cfg.rewards.base_height_target)
+
+    def _reward_feet_air_time(self): #h1有
         # Reward long steps
         # Need to filter the contacts because the contact reporting of PhysX is unreliable on meshes
         contact = self.contact_forces[:, self.feet_indices, 2] > 1.
@@ -1652,255 +1638,88 @@ class HumanoidRobot(BaseTask):
         self.feet_air_time *= ~contact_filt
         return rew_airTime
     
-    def _reward_feet_stumble(self):
+    def _reward_stumble(self): #h1有，但0
         # Penalize feet hitting vertical surfaces
         return torch.any(torch.norm(self.contact_forces[:, self.feet_indices, :2], dim=2) >\
              5 *torch.abs(self.contact_forces[:, self.feet_indices, 2]), dim=1)
         
-    def _reward_stand_still(self):
+    def _reward_stand_still(self): #h1有，但0
         # Penalize motion at zero commands
         return torch.sum(torch.abs(self.dof_pos - self.default_dof_pos), dim=1) * (torch.norm(self.commands[:, :2], dim=1) < 0.1)
 
-    def _reward_feet_contact_forces(self):
+    # remaining rewards not present in h1_2_fix (kept after h1-ordered ones)
+    def _reward_dof_pos_limits(self): #无
+        # Penalize dof positions too close to the limit
+        out_of_limits = -(self.dof_pos - self.dof_pos_limits[:, 0]).clip(max=0.) # lower limit
+        out_of_limits += (self.dof_pos - self.dof_pos_limits[:, 1]).clip(min=0.)
+        return torch.sum(out_of_limits, dim=1)
+
+    def _reward_dof_vel_limits(self): #无
+        # Penalize dof velocities too close to the limit
+        # clip to max error = 1 rad/s per joint to avoid huge penalties
+        return torch.sum((torch.abs(self.dof_vel) - self.dof_vel_limits*self.cfg.rewards.soft_dof_vel_limit).clip(min=0., max=1.), dim=1)
+
+    def _reward_torque_limits(self): #无
+        # penalize torques too close to the limit
+        return torch.sum((torch.abs(self.torques) - self.torque_limits*self.cfg.rewards.soft_torque_limit).clip(min=0.), dim=1)
+
+    def _reward_feet_contact_forces(self): #无
         # penalize high contact forces
         return torch.sum((torch.norm(self.contact_forces[:, self.feet_indices, :], dim=-1) -  self.cfg.rewards.max_contact_force).clip(min=0.), dim=1)
-    
-    # 这几个是config里有，但没实现的奖励
-    def _reward_dof_error(self):
-        """关节位置误差（相对默认姿态）。"""
-        return torch.sum(torch.abs(self.dof_pos - self.default_dof_pos_all), dim=1)
 
-    def _reward_delta_torques(self):
-        """力矩变化率（相邻步之间的差）。"""
-        return torch.sum(torch.abs(self.torques - self.last_torques), dim=1)
-    
-    def _reward_feet_edge(self):
-        """脚部边缘惩罚占位：若无边缘检测，返回0（不影响训练）。"""
-        return torch.zeros(self.num_envs, device=self.device)
+# ----------------------new reward----------------
 
-    # kelun添加的reward
+    def _reward_foot_clearance(self): #h1有
+        """
+        Reward lifting the feet when they are in swing (not contacting the ground).
+        For each foot that is not contacting, compute the vertical clearance relative to the
+        ground height under the foot. Only positive clearance above a small target contributes
+        to the reward so that small/noise motions are not rewarded.
 
-    def _reward_reach_goal(self):
-        """到达目标奖励（指数衰减，与跟踪奖励一致）"""
-        distance_to_goal = torch.norm(self.root_states[:, :2] - self.cur_goals[:, :2], dim=1)
-        # 使用指数衰减，距离越近奖励越高
-        return torch.exp(-distance_to_goal / 0.2)
-    
-    def _reward_heading_tracking(self):
-        """朝向跟踪奖励 - 鼓励机器人朝向目标点"""
-        heading_error = wrap_to_pi(self.target_yaw - self.yaw)
-        return torch.exp(-torch.abs(heading_error) / 0.3)  # 朝向越准确奖励越高
+        Returns:
+            torch.Tensor: shape (num_envs,) reward per environment
+        """
+        # feet world positions: shape [num_envs, n_feet, 3]
+        feet_pos = self.rigid_body_states[:, self.feet_indices, :3]
+        # feet z (world)
+        foot_z = feet_pos[:, :, 2]
 
-    def _reward_next_heading_tracking(self):
-        """朝向跟踪奖励 - 鼓励机器人朝向目标点"""
-        next_heading_error = wrap_to_pi(self.next_target_yaw - self.yaw)
-        return torch.exp(-torch.abs(next_heading_error) / 0.3)  # 朝向越准确奖励越高
-    
-    
-    # ---- add new rewards above -----
+        # --- sample ground height under each foot from height_samples ---
+        # map world x,y to height_samples grid indices (same convention as _get_heights)
+        points = feet_pos[:, :, :2].clone()
+        points += self.terrain.cfg.border_size
+        points = (points / self.terrain.cfg.horizontal_scale).long()
 
- 
-    
-    # def _reward_bridge_center(self):
-    #     """独木桥居中奖励 - 鼓励机器人在桥中央行走"""
-    #     # 计算机器人相对于桥中心的位置
-    #     y_offset = torch.abs(self.root_states[:, 1] - self.cur_goals[:, 1])
-    #     # 距离桥中心越近奖励越高
-    #     return torch.exp(-y_offset / 0.3)
+        px = points[:, :, 0].view(-1)
+        py = points[:, :, 1].view(-1)
 
-    # ===== Flat terrain oriented rewards =====
-    def _reward_lateral_drift(self):
-        """抑制侧向漂移 vy。"""
-        vy = torch.abs(self.base_lin_vel[:, 1])
-        return torch.exp(-vy / 0.2)
+        # clamp indices to valid range (height_samples has shape [rows, cols])
+        px = torch.clip(px, 0, self.height_samples.shape[0]-2)
+        py = torch.clip(py, 0, self.height_samples.shape[1]-2)
 
-    def _reward_yaw_stability(self):
-        """抑制不必要的偏航角速度。"""
-        wz = torch.abs(self.base_ang_vel[:, 2])
-        return torch.exp(-wz / 0.5)
+        heights1 = self.height_samples[px, py]
+        heights2 = self.height_samples[px+1, py]
+        heights3 = self.height_samples[px, py+1]
+        ground_h = torch.min(heights1, heights2)
+        ground_h = torch.min(ground_h, heights3)
+        # reshape back to [num_envs, n_feet] and scale by vertical_scale (same as _get_heights)
+        n_env = self.num_envs
+        n_feet = self.feet_indices.shape[0]
+        ground_h = ground_h.view(n_env, n_feet) * self.terrain.cfg.vertical_scale
 
-    def _reward_stride_length(self):
-        """步幅接近目标（基于两足水平距离估计）。"""
-        left_pos = self.rigid_body_states[:, self.feet_indices[0], :2]
-        right_pos = self.rigid_body_states[:, self.feet_indices[1], :2]
-        stride = torch.norm(left_pos - right_pos, dim=1)
-        target = 0.5
-        return torch.exp(-torch.abs(stride - target) / 0.15)
+        # clearance of each foot relative to ground (can be negative)
+        clearance = foot_z - ground_h
 
-    def _reward_gait_symmetry(self):
-        """左右脚接触节律对称（使用接触历史缓存）。"""
-        # contact_buf shape: [num_envs, contact_buf_len, 2]
-        if hasattr(self, "contact_buf"):
-            hist = self.contact_buf.float()
-            left_sum = torch.sum(hist[:, :, 0], dim=1)
-            right_sum = torch.sum(hist[:, :, 1], dim=1)
-            diff = torch.abs(left_sum - right_sum)
-            return torch.exp(-diff / (hist.shape[1] + 1e-6))
-        else:
-            return torch.ones(self.num_envs, device=self.device)
+        # detect contacts for feet (same threshold as other rewards)
+        contact = self.contact_forces[:, self.feet_indices, 2] > 1.0
+        swing_mask = ~contact
 
-    # ===== Wave terrain oriented rewards =====
-    def _reward_terrain_speed_match(self):
-        """速度匹配地形复杂度（起伏大 -> 降低目标速度）。"""
-        complexity = self._analyze_terrain_complexity()
-        max_speed = getattr(self.cfg, 'max_speed', 1.0)
-        min_speed = getattr(self.cfg, 'min_speed', 0.2)
-        v_target = max_speed - complexity * (max_speed - min_speed)
-        vx = torch.abs(self.base_lin_vel[:, 0])
-        return torch.exp(-torch.abs(vx - v_target) / 0.3)
+        # only reward clearance above a small target offset. The target is provided by cfg.rewards
+        # (e.g. 0.15 m). Clamp negative values to zero and sum across feet, then normalize.
+        target = getattr(self.cfg.rewards, 'foot_clearance_target', 0.15)
+        per_foot_reward = torch.clamp(clearance - target, min=0.0) * swing_mask
 
-    def _reward_foot_clearance(self):
-        """摆动期抬脚高度充足，减少绊脚（简单近似）。"""
-        feet_z = self.rigid_body_states[:, self.feet_indices, 2]
-        contact = (self.contact_forces[:, self.feet_indices, 2] > 1.).float()
-        swing_mask = 1.0 - contact
-        clearance = torch.clamp(feet_z - 0.06, min=0.0)
-        return torch.sum(clearance * swing_mask, dim=1)
-
-    def _reward_foot_impact(self):
-        """落脚冲击小（以接触期竖直速度近似）。"""
-        feet_vz = self.rigid_body_states[:, self.feet_indices, 9]  # lin vel z 索引=9
-        contact = (self.contact_forces[:, self.feet_indices, 2] > 1.).float()
-        impact = torch.sum(torch.abs(feet_vz) * contact, dim=1)
-        return torch.exp(-impact / 0.5)
-
-    def _reward_com_inside_support(self):
-        """基座投影靠近支撑多边形（用两足中点近似）。"""
-        base_xy = self.root_states[:, :2]
-        feet_xy = self.rigid_body_states[:, self.feet_indices, :2]
-        mid = torch.mean(feet_xy, dim=1)
-        dev = torch.norm(base_xy - mid, dim=1)
-        any_contact = (self.contact_forces[:, self.feet_indices, 2] > 1.).any(dim=1).float()
-        return torch.exp(-dev / 0.2) * any_contact
-
-    # def _reward_penalty_slippage(self):
-    #     """滑移惩罚奖励 - 惩罚脚部与地面接触时的滑移行为"""
-    #     foot_vel = self.rigid_body_states[:, self.feet_indices, 7:10]  # 获取脚部线速度 [x, y, z]
-    #     contact_force = self.contact_forces[:, self.feet_indices, :]   # 获取脚部接触力
-    #     # 计算滑移惩罚：脚部速度 × 接触状态（接触力>1N时认为有接触）
-    #     rew = torch.sum(torch.norm(foot_vel, dim=-1) * (torch.norm(contact_force, dim=-1) > 1.), dim=1)
-    #     return rew
-
-    # def _reward_feet_max_height_for_this_air(self):
-    #     """脚部空中最大高度奖励 - 鼓励脚部在腾空时达到合适高度"""
-    #     contact = self.contact_forces[:, self.feet_indices, 2] > 1.  # 检测脚部是否接触地面（z方向力>1N）
-    #     contact_filt = torch.logical_or(contact, self.last_contacts)  # 结合上一帧的接触状态
-    #     from_air_to_contact = torch.logical_and(contact_filt, ~self.last_contacts_filt)  # 检测从空中到接触的瞬间
-    #     self.last_contacts = contact  # 更新接触状态
-    #     self.last_contacts_filt = contact_filt  # 更新过滤后的接触状态
-    #     
-    #     # 更新脚部在空中的最大高度（z轴高度）
-    #     self.feet_air_max_height = torch.max(self.feet_air_max_height, self.rigid_body_states[:, self.feet_indices, 2])
-    #     
-    #     # 计算高度奖励：期望高度与实际最大高度的差值（只在首次接触地面时给予奖励）
-    #     rew_feet_max_height = torch.sum((torch.clamp_min(self.cfg.rewards.desired_feet_max_height_for_this_air - self.feet_air_max_height, 0)) * from_air_to_contact, dim=1)
-    #     self.feet_air_max_height *= ~contact_filt  # 重置非接触状态的脚部高度
-    #     return rew_feet_max_height
-
-    # def _reward_feet_heading_alignment(self):
-    #     """脚部朝向对齐奖励 - 鼓励脚部朝向与身体朝向一致"""
-    #     left_quat = self.rigid_body_states[:, self.feet_indices[0], 3:7]   # 左脚四元数
-    #     right_quat = self.rigid_body_states[:, self.feet_indices[1], 3:7]  # 右脚四元数
-    #     
-    #     # 计算左脚朝向角度
-    #     forward_left_feet = quat_apply(left_quat, self.forward_vec)
-    #     heading_left_feet = torch.atan2(forward_left_feet[:, 1], forward_left_feet[:, 0])
-    #     
-    #     # 计算右脚朝向角度
-    #     forward_right_feet = quat_apply(right_quat, self.forward_vec)
-    #     heading_right_feet = torch.atan2(forward_right_feet[:, 1], forward_right_feet[:, 0])
-    #     
-    #     # 计算身体朝向角度
-    #     root_forward = quat_apply(self.base_quat, self.forward_vec)
-    #     heading_root = torch.atan2(root_forward[:, 1], root_forward[:, 0])
-    #     
-    #     # 计算脚部朝向与身体朝向的角度差
-    #     heading_diff_left = torch.abs(wrap_to_pi(heading_left_feet - heading_root))
-    #     heading_diff_right = torch.abs(wrap_to_pi(heading_right_feet - heading_root))
-    #     return heading_diff_left + heading_diff_right
-
-    # def _reward_penalty_feet_ori(self):
-    #     """脚部姿态惩罚 - 惩罚脚部不正确的姿态（脚部应该平行于地面）"""
-    #     left_quat = self.rigid_body_states[:, self.feet_indices[0], 3:7]   # 左脚四元数
-    #     left_gravity = quat_rotate_inverse(left_quat, self.gravity_vec)   # 左脚重力向量（在脚部坐标系中）
-    #     right_quat = self.rigid_body_states[:, self.feet_indices[1], 3:7]  # 右脚四元数
-    #     right_gravity = quat_rotate_inverse(right_quat, self.gravity_vec) # 右脚重力向量（在脚部坐标系中）
-    #     
-    #     # 计算脚部姿态误差：理想情况下重力应该只在z轴方向（x,y方向应该为0）
-    #     return torch.sum(torch.square(left_gravity[:, :2]), dim=1)**0.5 + torch.sum(torch.square(right_gravity[:, :2]), dim=1)**0.5
-
-    # def _reward_feet_heading_alignment_contact(self):
-    #     """脚部朝向对齐奖励（仅接触时） - 只在脚部接触地面时检查朝向对齐"""
-    #     left_quat = self.rigid_body_states[:, self.feet_indices[0], 3:7]   # 左脚四元数
-    #     right_quat = self.rigid_body_states[:, self.feet_indices[1], 3:7]  # 右脚四元数
-    #     
-    #     # 计算左脚朝向角度
-    #     forward_left_feet = quat_apply(left_quat, self.forward_vec)
-    #     heading_left_feet = torch.atan2(forward_left_feet[:, 1], forward_left_feet[:, 0])
-    #     
-    #     # 计算右脚朝向角度
-    #     forward_right_feet = quat_apply(right_quat, self.forward_vec)
-    #     heading_right_feet = torch.atan2(forward_right_feet[:, 1], forward_right_feet[:, 0])
-    #     
-    #     # 计算身体朝向角度
-    #     root_forward = quat_apply(self.base_quat, self.forward_vec)
-    #     heading_root = torch.atan2(root_forward[:, 1], root_forward[:, 0])
-    #     
-    #     # 计算脚部朝向与身体朝向的角度差（只在接触时计算）
-    #     heading_diff_left = torch.abs(wrap_to_pi(heading_left_feet - heading_root))
-    #     heading_diff_right = torch.abs(wrap_to_pi(heading_right_feet - heading_root))
-    #     return heading_diff_left*self.contacts_filt[:, 0] + heading_diff_right*self.contacts_filt[:, 1]
-
-    # def _reward_penalty_feet_ori_contact(self):
-    #     """脚部姿态惩罚（仅接触时） - 只在脚部接触地面时检查姿态正确性"""
-    #     left_quat = self.rigid_body_states[:, self.feet_indices[0], 3:7]   # 左脚四元数
-    #     left_gravity = quat_rotate_inverse(left_quat, self.gravity_vec)   # 左脚重力向量（在脚部坐标系中）
-    #     right_quat = self.rigid_body_states[:, self.feet_indices[1], 3:7]  # 右脚四元数
-    #     right_gravity = quat_rotate_inverse(right_quat, self.gravity_vec) # 右脚重力向量（在脚部坐标系中）
-    #     
-    #     # 计算脚部姿态误差（只在接触时计算）
-    #     error = torch.norm(left_gravity[:, :2], dim=-1) * self.contacts_filt[:, 0] + torch.norm(right_gravity[:, :2], dim=-1) * self.contacts_filt[:, 1]
-    #     return error
-
-    # def _reward_gradient_aware_stride(self):
-    #     """梯度感知步长奖励 - 根据地形坡度调整最优步长"""
-    #     forward_gradient = self._get_forward_height_gradient()  # 获取前方地形高度梯度
-        
-    #     # 根据坡度调整最优步长：
-    #     # - 平地：大步长（0.6m）
-    #     # - 上坡：小步长（0.3m）
-    #     # - 下坡：中等步长（0.45m）
-    #     target_stride_length = torch.clamp(0.6 - 0.3 * torch.abs(forward_gradient), 0.3, 0.8)
-        
-    #     # 计算当前步长（通过脚部位置估计）
-    #     current_stride = self._estimate_current_stride_length()
-    #     stride_error = torch.abs(current_stride - target_stride_length)
-        
-    #     # 使用指数函数给予奖励：步长越接近目标值奖励越高
-    #     return torch.exp(-stride_error / 0.1)
-
-    # def _reward_terrain_anticipatory_balance(self):
-    #     """地形预测性平衡奖励 - 根据即将踩踏的地形提前调整重心"""
-    #     # 分析即将踩踏的地面高度
-    #     next_step_heights = self._predict_next_footstep_heights()
-        
-    #     # 如果下一步是台阶，提前调整重心
-    #     step_height_diff = next_step_heights[:, 1] - next_step_heights[:, 0]  # 左右脚高度差
-        
-    #     # 上台阶时鼓励重心前移（提高稳定性）
-    #     upward_step = step_height_diff > 0.05  # 检测是否为上台阶
-    #     target_com_x = torch.where(upward_step, 0.05, 0.0)  # 上台阶时重心前移5cm
-        
-    #     # 计算当前重心位置与目标重心的误差
-    #     current_com_x = self._estimate_center_of_mass()[:, 0]
-    #     com_error = torch.abs(current_com_x - target_com_x)
-    #     
-    #     # 使用指数函数给予奖励：重心位置越接近目标值奖励越高
-    #     return torch.exp(-com_error / 0.02)
-
-    # def _estimate_current_stride_length(self):
-    #     """估计当前步长 - 通过左右脚位置计算步长"""
-    #     left_foot_pos = self.rigid_body_states[:, self.feet_indices[0], :3]   # 左脚位置
-    #     right_foot_pos = self.rigid_body_states[:, self.feet_indices[1], :3]  # 右脚位置
-    #     stride_length = torch.norm(left_foot_pos - right_foot_pos, dim=1)      # 计算两脚间距离
-    #     return stride_length
+        # average reward per foot
+        n_feet = self.feet_indices.shape[0] if hasattr(self, 'feet_indices') else 1
+        rew = torch.sum(per_foot_reward, dim=1) / float(max(1, n_feet))
+        return rew
