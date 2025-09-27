@@ -1002,6 +1002,21 @@ class HumanoidRobot(BaseTask):
         self.rigid_body_states = gymtorch.wrap_tensor(rigid_body_state_tensor).view(self.num_envs, -1, 13)
         self.dof_state = gymtorch.wrap_tensor(dof_state_tensor).view(self.num_envs, -1, 2)
 
+        # debug: optionally print rigid_body_states shape and a small sample plus feet positions
+        try:
+            import os
+            if os.environ.get('HUMANOID_DEBUG', '0') == '1':
+                print(f"DEBUG: rigid_body_states.shape = {self.rigid_body_states.shape}")
+                # print the first environment, first 6 bodies' pos (concise)
+                sample = self.rigid_body_states[0, :6, :3].cpu().numpy()
+                print("DEBUG: sample rigid_body_states[0,:6,:3]=\n", sample)
+                if hasattr(self, 'feet_indices') and self.feet_indices.numel() > 0:
+                    feet_pos = self.rigid_body_states[:, self.feet_indices, :3]
+                    print("DEBUG: feet_pos.shape=", feet_pos.shape)
+                    print("DEBUG: feet_pos[0]=\n", feet_pos[0].cpu().numpy())
+        except Exception:
+            pass
+
         self.dof_pos = self.dof_state[...,0]
         self.dof_vel = self.dof_state[..., 1]
         self.base_quat = self.root_states[:, 3:7]
@@ -1211,6 +1226,15 @@ class HumanoidRobot(BaseTask):
         self.num_dofs = len(self.dof_names)
         feet_names = [s for s in body_names if self.cfg.asset.foot_name in s]
         knee_names = [s for s in body_names if self.cfg.asset.knee_name in s]
+
+        # --- debug: optionally print asset body names and detected foot names ---
+        try:
+            import os
+            if os.environ.get('HUMANOID_DEBUG', '0') == '1':
+                print("DEBUG: asset rigid body names (first 100 chars):", str(body_names)[:1000])
+                print("DEBUG: detected feet_names:", feet_names)
+        except Exception:
+            pass
         
         penalized_contact_names = []
         for name in self.cfg.asset.penalize_contacts_on:
@@ -1269,6 +1293,15 @@ class HumanoidRobot(BaseTask):
         self.feet_indices = torch.zeros(len(feet_names), dtype=torch.long, device=self.device, requires_grad=False)
         for i in range(len(feet_names)):
             self.feet_indices[i] = self.gym.find_actor_rigid_body_handle(self.envs[0], self.actor_handles[0], feet_names[i])
+
+        # debug: print feet_indices when requested
+        try:
+            import os
+            if os.environ.get('HUMANOID_DEBUG', '0') == '1':
+                # move to cpu for safe printing
+                print("DEBUG: feet_indices:", self.feet_indices.cpu().numpy())
+        except Exception:
+            pass
 
         self.knee_indices = torch.zeros(len(knee_names), dtype=torch.long, device=self.device, requires_grad=False)
         for i in range(len(knee_names)):

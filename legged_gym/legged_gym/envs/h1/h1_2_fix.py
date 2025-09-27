@@ -194,7 +194,7 @@ class H1_2FixCfg( LeggedRobotCfg ):
             feet_air_time = 1.0        # 恢复原始权重
             stumble = -0.0        # 恢复：不惩罚绊倒
             stand_still = -0.          # 恢复：不惩罚静止
-            foot_clearance = 1        # 鼓励抬脚高度（当脚处于摆动时）
+            foot_clearance = 3        # 鼓励抬脚高度（当脚处于摆动时）
             
             # reach_goal = 1.0           # 到达目标奖励
             # heading_tracking = 1.0      # 朝向跟踪奖励
