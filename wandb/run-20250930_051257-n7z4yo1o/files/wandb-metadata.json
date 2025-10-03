@@ -1,0 +1,15 @@
+{
+  "os":  "Linux-5.15.0-69-generic-x86_64-with-glibc2.17",
+  "python":  "CPython 3.8.20",
+  "startedAt":  "2025-09-29T21:12:57.863679Z",
+  "program":  "<python with no main file>",
+  "git":  {
+    "remote":  "https://github.com/shiki-ta/Humanoid-Terrain-Bench.git",
+    "commit":  "a23c1bf6ea8591005b95766377537a8059bbf3a9"
+  },
+  "email":  "kelun0603@gmail.com",
+  "root":  "/home/lsf_storage/homes/guyi/kelun/Humanoid-Terrain-Bench-kelun",
+  "host":  "4090-8",
+  "executable":  "/home/guyi/miniconda3/envs/pbhc/bin/python",
+  "writerId":  "lol2d93ck4defn1nbq3k7nloazpama5u"
+}

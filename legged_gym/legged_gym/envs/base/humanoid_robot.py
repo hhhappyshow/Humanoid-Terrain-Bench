@@ -58,6 +58,7 @@ import matplotlib.pyplot as plt
 
 
 class HumanoidRobot(BaseTask):
+
     def __init__(self, cfg: LeggedRobotCfg, sim_params, physics_engine, sim_device, headless, save):
         """ Parses the provided config file,
             calls create_sim() (which creates, simulation, terrain and environments),
@@ -264,11 +265,26 @@ class HumanoidRobot(BaseTask):
         self.cur_goal_idx[next_flag] += 1
         self.reach_goal_timer[next_flag] = 0
 
+        # 将目标点转换为世界坐标系
+        # cur_goals_world = self.cur_goals[:, :2] + self.env_origins[:, :2]
+        # next_goals_world = self.next_goals[:, :2] + self.env_origins[:, :2]
+        
+        # self.reached_goal_ids = torch.norm(self.root_states[:, :2] - cur_goals_world, dim=1) < self.cfg.env.next_goal_threshold
+        # self.reach_goal_timer[self.reached_goal_ids] += 1
+
+        # self.target_pos_rel = cur_goals_world - self.root_states[:, :2]
+        # self.next_target_pos_rel = next_goals_world - self.root_states[:, :2]
+
+        
         self.reached_goal_ids = torch.norm(self.root_states[:, :2] - self.cur_goals[:, :2], dim=1) < self.cfg.env.next_goal_threshold
         self.reach_goal_timer[self.reached_goal_ids] += 1
 
         self.target_pos_rel = self.cur_goals[:, :2] - self.root_states[:, :2]
         self.next_target_pos_rel = self.next_goals[:, :2] - self.root_states[:, :2]
+        
+        # print('cur_goals',self.cur_goals[:, :2])
+        # print('env_origins', self.env_origins[:, :2])
+        # print('root_states', self.root_states[:, :2])
 
         norm = torch.norm(self.target_pos_rel, dim=-1, keepdim=True)
         target_vec_norm = self.target_pos_rel / (norm + 1e-5)
@@ -335,7 +351,7 @@ class HumanoidRobot(BaseTask):
         if self.viewer and self.enable_viewer_sync and self.debug_viz:
             self.gym.clear_lines(self.viewer)
             # self._draw_height_samples()
-            self._draw_goals()
+            # self._draw_goals()
             # self._draw_feet()
             if self.cfg.depth.use_camera:
                 window_name = "Depth Image"
@@ -426,8 +442,8 @@ class HumanoidRobot(BaseTask):
         if self.cfg.terrain.curriculum:
             self._update_terrain_curriculum(env_ids)
         # avoid updating command curriculum at each step since the maximum command is common to all envs
-        if self.cfg.commands.curriculum and (self.common_step_counter % self.max_episode_length==0):
-            self.update_command_curriculum(env_ids)
+        # if self.cfg.commands.curriculum and (self.common_step_counter % self.max_episode_length==0):
+        #     self.update_command_curriculum(env_ids)
 
         # reset robot states
         self._reset_dofs(env_ids)
@@ -497,9 +513,34 @@ class HumanoidRobot(BaseTask):
         即本体感知
         """
         imu_obs = torch.stack((self.roll, self.pitch), dim=1)
-        if self.global_counter % 5 == 0:
-            self.delta_yaw = self.target_yaw - self.yaw
-            self.delta_next_yaw = self.next_target_yaw - self.yaw
+        self.delta_yaw = self.target_yaw - self.yaw
+        self.delta_next_yaw = self.next_target_yaw - self.yaw
+        
+        # if self.global_counter % 5 == 0:
+            # # 添加调试信息
+            # print("Robot position:", self.root_states[0, :2])  # 机器人位置 - 世界坐标系
+            # print("Env origin:", self.env_origins[0, :2])      # 环境原点 - 世界坐标系
+            # print("Base init state:", self.base_init_state[:2]) # 基础初始状态 - 相对环境原点坐标系
+            # print("Current goal (relative):", self.cur_goals[0, :2])      # 当前目标点 - 相对环境原点坐标系
+            # print("Next goal (relative):", self.next_goals[0, :2])        # 下一个目标点 - 相对环境原点坐标系
+            # print("Current goal (world):", self.cur_goals[0, :2] + self.env_origins[0, :2])      # 当前目标点 - 世界坐标系
+            # print("Next goal (world):", self.next_goals[0, :2] + self.env_origins[0, :2])        # 下一个目标点 - 世界坐标系
+            # # print("Target pos rel:", self.target_pos_rel[0])   # 相对位置向量 - 机器人本体坐标系
+            # print("Robot yaw:", self.yaw[0])                   # 机器人当前朝向 - 世界坐标系
+            # print("Target yaw:", self.target_yaw[0])           # 目标朝向 - 世界坐标系
+            # print("self.delta_yaw=",self.delta_yaw[0])
+            # print("self.delta_next_yaw=",self.delta_next_yaw[0]) 
+            
+            # print("######################################################################")
+            
+            # # 添加速度和指令信息
+            # print("Robot linear velocity:", self.base_lin_vel[0])  # 机器人线速度 - 机器人本体坐标系
+            # print("Robot angular velocity:", self.base_ang_vel[0])  # 机器人角速度 - 机器人本体坐标系
+            # print("Linear velocity command X:", self.commands[0, 0])  # X方向线速度指令 - 机器人本体坐标系
+            # print("Angular velocity command Yaw:", self.commands[0, 2])  # Z轴角速度指令 - 机器人本体坐标系
+            # print("Heading command:", self.commands[0, 3])  # 朝向指令 - 世界坐标系
+            
+
         obs_buf = torch.cat((#skill_vector, 
                             self.base_ang_vel  * self.obs_scales.ang_vel,   #[1,3] # 3
                             imu_obs,    #[1,2]  2 只包含roll和pitch
@@ -550,6 +591,11 @@ class HumanoidRobot(BaseTask):
                 self.contact_filt.float().unsqueeze(1)
             ], dim=1)
         )
+        
+        current_complexity = self._analyze_terrain_complexity()  # shape: [num_envs]
+        ptr = self.terrain_complexity_ptr % self.terrain_complexity_history.shape[1]
+        self.terrain_complexity_history[torch.arange(self.num_envs), ptr] = current_complexity
+        self.terrain_complexity_ptr += 1
             
     def get_noisy_measurement(self, x, scale):
         if self.cfg.noise.add_noise:
@@ -660,39 +706,151 @@ class HumanoidRobot(BaseTask):
             Default behaviour: Compute ang vel command based on target and heading, compute measured terrain heights and randomly push robots
         """
         # 
-        env_ids = (self.episode_length_buf % int(self.cfg.commands.resampling_time / self.dt)==0)
-        self._resample_commands(env_ids.nonzero(as_tuple=False).flatten())
-
-        if self.cfg.commands.heading_command:
-            forward = quat_apply(self.base_quat, self.forward_vec)
-            heading = torch.atan2(forward[:, 1], forward[:, 0])
-            self.commands[:, 2] = torch.clip(0.8*wrap_to_pi(self.commands[:, 3] - heading), -1., 1.)
-            self.commands[:, 2] *= torch.abs(self.commands[:, 2]) > self.cfg.commands.ang_vel_clip
-        
         if self.cfg.terrain.measure_heights:
             if self.global_counter % self.cfg.depth.update_interval == 0:
                 self.measured_heights, self.measured_heights_data  = self._get_heights()
+        
+        env_ids = (self.episode_length_buf % int(self.cfg.commands.resampling_time / self.dt)==0)
+        self._resample_commands(env_ids.nonzero(as_tuple=False).flatten())
+
         if self.cfg.domain_rand.push_robots and  (self.common_step_counter % self.cfg.domain_rand.push_interval == 0):
             self._push_robots()
     
     def _gather_cur_goals(self, future=0):
         return self.env_goals.gather(1, (self.cur_goal_idx[:, None, None]+future).expand(-1, -1, self.env_goals.shape[-1])).squeeze(1)
+    
+    def _get_forward_height_gradient(self):
+        """计算机器人前方的高度梯度，用于判断坡度"""
+        front_x_indices = [3, 4, 5, 6]  # x = 0, 0.15, 0.3, 0.45 的索引
+        front_point_indices = []
+        for x_idx in front_x_indices:
+            for y_idx in range(11):  # 所有y方向
+                front_point_indices.append(x_idx * 11 + y_idx)
 
-    def _resample_commands(self, env_ids):
-        """ Randommly select commands of some environments
+        forward_heights = self.measured_heights[:, front_point_indices]
+        # 计算一阶差分
+        gradients = torch.diff(forward_heights, n=1, dim=1)
+        avg_gradient = torch.mean(gradients, dim=1)
+        return avg_gradient  # 返回每个环境的平均坡度指标
 
-        Args:
-            env_ids (List[int]): Environments ids for which new commands are needed
+    def _analyze_terrain_complexity(self):
+        """分析前方地形复杂度"""
+        # 提取前方高度采样点（机器人前方0-1.2米区域）
+        front_x_indices = [3, 4, 5, 6]  # x = 0, 0.15, 0.3, 0.45 的索引
+        front_point_indices = []
+        for x_idx in front_x_indices:
+            for y_idx in range(11):  # 所有y方向
+                front_point_indices.append(x_idx * 11 + y_idx)
+
+        forward_heights = self.measured_heights[:, front_point_indices]
+        # 计算地形复杂度指标
+        height_variance = torch.var(forward_heights, dim=1)      # 高度方差（起伏程度）
+        height_gradient = torch.max(forward_heights, dim=1)[0] - torch.min(forward_heights, dim=1)[0]  # 高度差
+        height_roughness = torch.mean(torch.abs(torch.diff(forward_heights, dim=1)), dim=1)  # 粗糙度
+        
+        # 综合复杂度评分 [0, 1]
+        complexity = torch.clamp(
+            0.4 * height_variance + 0.4 * height_gradient + 0.2 * height_roughness,
+            0.0, 1.0
+        )
+        return complexity
+    
+    
+    def _generate_adaptive_speed(self, env_ids):
+        """基于地形复杂度生成自适应速度
+        
+        参数:
+            env_ids: 环境ID列表
+            
+        返回:
+            adaptive_speeds: 自适应速度张量
         """
-        self.commands[env_ids, 0] = torch_rand_float(self.command_ranges["lin_vel_x"][0], self.command_ranges["lin_vel_x"][1], (len(env_ids), 1), device=self.device).squeeze(1)
-        if self.cfg.commands.heading_command:
-            self.commands[env_ids, 3] = torch_rand_float(self.command_ranges["heading"][0], self.command_ranges["heading"][1], (len(env_ids), 1), device=self.device).squeeze(1)
-        else:
-            self.commands[env_ids, 2] = torch_rand_float(self.command_ranges["ang_vel_yaw"][0], self.command_ranges["ang_vel_yaw"][1], (len(env_ids), 1), device=self.device).squeeze(1)
-            self.commands[env_ids, 2] *= torch.abs(self.commands[env_ids, 2]) > self.cfg.commands.ang_vel_clip
+        complexity = self._analyze_terrain_complexity()[env_ids]
+        
+        # 获取配置参数，如果没有设置则使用默认值
+        max_speed = getattr(self.cfg, 'max_speed', 1.0)  # 默认最大速度1.5m/s
+        min_speed = getattr(self.cfg, 'min_speed', 0.2)  # 默认最小速度0.2m/s
+        
+        # 计算速度范围和基础速度
+        speed_range_ratio = getattr(self.cfg, 'speed_range_ratio', 0.3)  # 速度范围比例
+        complexity_sensitivity = getattr(self.cfg, 'complexity_sensitivity', 1.0)  # 复杂度敏感度
+        
+        # 基础速度从max_speed到min_speed线性下降
+        base_speed = max_speed - complexity * complexity_sensitivity * (max_speed - min_speed)
+        
+        # 速度范围：简单地形变化大，困难地形变化小
+        speed_range = speed_range_ratio * (1 - complexity) * (max_speed - min_speed)
+        
+        # 在基础速度±范围内随机采样
+        min_speed_val = torch.clamp(base_speed - speed_range, min_speed, max_speed - 0.1)
+        max_speed_val = torch.clamp(base_speed + speed_range, min_speed + 0.1, max_speed)
+        
+        # 生成随机速度
+        adaptive_speeds = torch.empty((len(env_ids), 1), device=self.device).uniform_(0, 1)
+        adaptive_speeds = min_speed_val.unsqueeze(1) + adaptive_speeds * (max_speed_val.unsqueeze(1) - min_speed_val.unsqueeze(1))
+        adaptive_speeds = adaptive_speeds.squeeze(1)
+        
+        return adaptive_speeds
+    
+    def _resample_commands(self, env_ids):
+        """智能的命令重采样（替换原有的随机采样），集成heading/ang_vel采样和clip逻辑"""
+        # 采样前进速度
 
-        # set small commands to zero
-        self.commands[env_ids, :2] *= torch.abs(self.commands[env_ids, 0:1]) > self.cfg.commands.lin_vel_clip
+        if self.cfg.commands.height_adaptive_speed:
+            adaptive_speeds = self._generate_adaptive_speed(env_ids)
+            self.commands[env_ids, 0] = adaptive_speeds
+        else:
+            self.commands[env_ids, 0] = torch_rand_float(
+                self.command_ranges["lin_vel_x"][0],
+                self.command_ranges["lin_vel_x"][1],
+                (len(env_ids), 1), device=self.device
+            ).squeeze(1)
+
+        if self.cfg.commands.heading_command:
+            if hasattr(self, 'target_yaw') and hasattr(self, 'yaw'):
+                self.commands[env_ids, 3] = self.target_yaw[env_ids]
+            else:
+                self.commands[env_ids, 3] = torch_rand_float(self.command_ranges["heading"][0], self.command_ranges["heading"][1], (len(env_ids), 1), device=self.device).squeeze(1)
+
+            if hasattr(self, 'target_yaw') and hasattr(self, 'yaw'):
+                yaw_error = wrap_to_pi(self.commands[env_ids, 3] - self.yaw[env_ids])
+                self.commands[env_ids, 2] =  0.8 * yaw_error
+            
+            else:
+                self.commands[env_ids, 2] = torch_rand_float(
+                    self.command_ranges["ang_vel_yaw"][0],
+                    self.command_ranges["ang_vel_yaw"][1],
+                    (len(env_ids), 1), device=self.device
+                ).squeeze(1)
+
+        small_command_mask = torch.abs(self.commands[env_ids, 2]) <= self.cfg.commands.ang_vel_clip
+        self.commands[env_ids, 2] = torch.where(small_command_mask, 
+                                                torch.zeros_like(self.commands[env_ids, 2]), 
+                                                self.commands[env_ids, 2])
+
+        small_lin_vel_mask = torch.abs(self.commands[env_ids, 0]) <= self.cfg.commands.lin_vel_clip
+        self.commands[env_ids, 0] = torch.where(small_lin_vel_mask, 
+                                               torch.zeros_like(self.commands[env_ids, 0]), 
+                                               self.commands[env_ids, 0])
+        self.commands[env_ids, 1] = torch.where(small_lin_vel_mask, 
+                                               torch.zeros_like(self.commands[env_ids, 1]), 
+                                               self.commands[env_ids, 1])
+
+
+    def process_actions(self, raw_actions):
+        """
+        处理原始动作，应用环境的裁剪和缩放
+        这个方法复制了step()方法中的动作处理逻辑，用于蒸馏训练
+        
+        Args:
+            raw_actions (torch.Tensor): 原始动作
+            
+        Returns:
+            torch.Tensor: 处理后的动作（与step()方法中self.actions相同）
+        """
+        clip_actions = self.cfg.normalization.clip_actions / self.cfg.control.action_scale
+        processed_actions = torch.clip(raw_actions, -clip_actions, clip_actions).to(self.device)
+        return processed_actions
 
     def _compute_torques(self, actions):
         """ Compute torques from actions.
@@ -778,29 +936,59 @@ class HumanoidRobot(BaseTask):
         self.root_states[:, 7:9] = torch_rand_float(-max_vel, max_vel, (self.num_envs, 2), device=self.device) # lin vel x/y
         self.gym.set_actor_root_state_tensor(self.sim, gymtorch.unwrap_tensor(self.root_states))
 
-    def _update_terrain_curriculum(self, env_ids):
-        """ Implements the game-inspired curriculum.
 
-        Args:
-            env_ids (List[int]): ids of environments being reset
-        """
-        # Implement Terrain curriculum
+    def _update_terrain_curriculum(self, env_ids):
+        """简单的课程学习：连续成功3次升级，连续失败2次降级"""
         if not self.init_done:
-            # don't change on initial reset
             return
         
-        dis_to_origin = torch.norm(self.root_states[env_ids, :2] - self.env_origins[env_ids, :2], dim=1)
-        threshold = self.commands[env_ids, 0] * self.cfg.env.episode_length_s
-        move_up =dis_to_origin > 0.8*threshold
-        move_down = dis_to_origin < 0.4*threshold
-
-        self.terrain_levels[env_ids] += 1 * move_up - 1 * move_down
-        # # Robots that solve the last level are sent to a random one
-        self.terrain_levels[env_ids] = torch.where(self.terrain_levels[env_ids]>=self.max_terrain_level,
-                                                   torch.randint_like(self.terrain_levels[env_ids], self.max_terrain_level),
-                                                   torch.clip(self.terrain_levels[env_ids], 0)) # (the minumum level is zero)
+        # 初始化环境级别的连续成功/失败计数器
+        if not hasattr(self, 'env_consecutive_success'):
+            self.env_consecutive_success = torch.zeros(self.num_envs, dtype=torch.int, device=self.device)
+            self.env_consecutive_failure = torch.zeros(self.num_envs, dtype=torch.int, device=self.device)
         
+        # 课程学习参数
+        success_threshold = 3
+        failure_threshold = 2
+        
+        # 检查每个需要重置的环境
+        for env_id in env_ids:
+            env_id = env_id.item()
+            
+            # 判断这次episode是否成功（到达所有目标点）
+            is_success = self.cur_goal_idx[env_id] >= self.cfg.terrain.num_goals
+            
+            if is_success:
+                # 成功：增加连续成功计数，重置连续失败计数
+                self.env_consecutive_success[env_id] += 1
+                self.env_consecutive_failure[env_id] = 0
+                
+                # 检查是否达到升级条件
+                if self.env_consecutive_success[env_id] >= success_threshold:
+                    self.terrain_levels[env_id] += 1
+                    self.env_consecutive_success[env_id] = 0  # 重置计数器
+                    # print(f"环境 {env_id} 连续成功{success_threshold}次，升级到等级 {self.terrain_levels[env_id]}")
+            else:
+                # 失败：增加连续失败计数，重置连续成功计数
+                self.env_consecutive_failure[env_id] += 1
+                self.env_consecutive_success[env_id] = 0
+                
+                # 检查是否达到降级条件
+                if self.env_consecutive_failure[env_id] >= failure_threshold:
+                    self.terrain_levels[env_id] -= 1
+                    self.env_consecutive_failure[env_id] = 0  # 重置计数器
+                    # print(f"环境 {env_id} 连续失败{failure_threshold}次，降级到等级 {self.terrain_levels[env_id]}")
+        
+        # 保持难度在合理范围
+        self.terrain_levels[env_ids] = torch.where(
+            self.terrain_levels[env_ids] >= self.max_terrain_level,
+            torch.randint_like(self.terrain_levels[env_ids], self.max_terrain_level),
+            torch.clip(self.terrain_levels[env_ids], 0)
+        )
+        
+        # 更新环境类别和目标
         self.env_class[env_ids] = self.terrain_class[self.terrain_levels[env_ids], self.terrain_types[env_ids]]
+        self.env_origins[env_ids] = self.terrain_origins[self.terrain_levels[env_ids], self.terrain_types[env_ids]]
         
         temp = self.terrain_goals[self.terrain_levels, self.terrain_types]
         last_col = temp[:, -1].unsqueeze(1)
@@ -836,6 +1024,13 @@ class HumanoidRobot(BaseTask):
         self.contact_forces = gymtorch.wrap_tensor(net_contact_forces).view(self.num_envs, -1, 3) # shape: num_envs, num_bodies, xyz axis
 
         # initialize some data used later on
+        self.terrain_complexity_history = torch.zeros(self.num_envs, 100, device=self.device)  # 100为历史长度，可自定义
+        self.terrain_complexity_ptr = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
+        # 动态计算高度采样点数
+        num_height_points = len(self.cfg.terrain.measured_points_x) * len(self.cfg.terrain.measured_points_y)
+        self.measured_heights = torch.zeros((self.num_envs, num_height_points), device=self.device)
+        # self.target_yaw = torch.zeros(self.num_envs, device=self.device)
+        # self.next_target_yaw = torch.zeros(self.num_envs, device=self.device)  
         self.common_step_counter = 0
         self.extras = {}
         self.gravity_vec = to_torch(get_axis_params(-1., self.up_axis_idx), device=self.device).repeat((self.num_envs, 1))
@@ -871,8 +1066,8 @@ class HumanoidRobot(BaseTask):
         self.projected_gravity = quat_rotate_inverse(self.base_quat, self.gravity_vec)
         if self.cfg.terrain.measure_heights:
             self.height_points, self.height_points_data = self._init_height_points()
-        self.measured_heights = 0
-        self.measured_heights = 0
+        # self.measured_heights = 0
+        
 
         # joint positions offsets and PD gains
         self.default_dof_pos = torch.zeros(self.num_dof, dtype=torch.float, device=self.device, requires_grad=False)
@@ -1118,30 +1313,104 @@ class HumanoidRobot(BaseTask):
             self.env_origins[:, 1] = spacing * yy.flatten()[:self.num_envs]
             self.env_origins[:, 2] = 0.
         else:
+            # 标记：自定义环境起点
             self.custom_origins = True
+
+            # 每个环境的起点坐标 (x,y,z)，初始化为零
+            # shape: [num_envs, 3]
+            # 例如：如果有 4096 个并行环境，那么这里是一个 (4096, 3) 的张量
             self.env_origins = torch.zeros(self.num_envs, 3, device=self.device, requires_grad=False)
+
+            # 每个环境的类别 (class)，通常代表地形类别
+            # shape: [num_envs]
             self.env_class = torch.zeros(self.num_envs, device=self.device, requires_grad=False)
-            # put robots at the origins defined by the terrain
-            max_init_level = self.cfg.terrain.max_init_terrain_level # 2
-            if not self.cfg.terrain.curriculum: max_init_level = self.cfg.terrain.num_rows - 1
+
+            # ========== 随机化环境的地形等级与类别 ==========
+
+            # 最大初始化地形等级 (难度层数) 
+            # 默认取配置文件中的最大初始等级
+            max_init_level = self.cfg.terrain.max_init_terrain_level  # 例如 2
+
+            # 如果不启用 curriculum (课程学习)，则允许从所有地形行中采样
+            if not self.cfg.terrain.curriculum:
+                max_init_level = self.cfg.terrain.num_rows - 1
+
+            # 为每个环境随机分配一个地形等级 [0, max_init_level]
+            # shape: [num_envs]
             self.terrain_levels = torch.randint(0, max_init_level+1, (self.num_envs,), device=self.device)
-            self.terrain_types = torch.div(torch.arange(self.num_envs, device=self.device), (self.num_envs/self.cfg.terrain.num_cols), rounding_mode='floor').to(torch.long)
+
+            # 为每个环境分配地形类型
+            # 按列来划分：假设一共有 num_cols 列，每列是一种 terrain type
+            # torch.arange(self.num_envs) -> [0, 1, 2, ..., num_envs-1]
+            # 除以 (num_envs / num_cols) 再取 floor -> 得到 [0,...,num_cols-1]
+            # shape: [num_envs]
+            self.terrain_types = torch.div(
+                torch.arange(self.num_envs, device=self.device),
+                (self.num_envs/self.cfg.terrain.num_cols),
+                rounding_mode='floor'
+            ).to(torch.long)
+
+            # 保存最大 terrain 等级 (即 num_rows)
             self.max_terrain_level = self.cfg.terrain.num_rows
+
+            # 从 numpy 转换 terrain 的起点坐标表格
+            # terrain.env_origins: shape [num_rows, num_cols, 3]
+            # 每个地形格子都有一个起点 (x,y,z)
             self.terrain_origins = torch.from_numpy(self.terrain.env_origins).to(self.device).to(torch.float)
 
+            # 按照随机采样的 terrain_levels 和 terrain_types，给每个环境分配起点坐标
+            # 例如 terrain_origins[level, type] -> [3] [xyz]
+            # env_origins: shape [num_envs, 3]
             self.env_origins[:] = self.terrain_origins[self.terrain_levels, self.terrain_types]
+
+            # terrain_class: 保存每个地形格子的类别 (由 numpy 转 tensor)
+            # shape: [num_rows, num_cols]
             self.terrain_class = torch.from_numpy(self.terrain.terrain_type).to(self.device).to(torch.float)
+
+            # 为每个环境分配类别，存入 env_class
             self.env_class[:] = self.terrain_class[self.terrain_levels, self.terrain_types]
 
-            self.terrain_goals = torch.from_numpy(self.terrain.goals).to(self.device).to(torch.float)
-            self.env_goals = torch.zeros(self.num_envs, self.cfg.terrain.num_goals + self.cfg.env.num_future_goal_obs, 3, device=self.device, requires_grad=False)
-            self.cur_goal_idx = torch.zeros(self.num_envs, device=self.device, requires_grad=False, dtype=torch.long)
-            temp = self.terrain_goals[self.terrain_levels, self.terrain_types]
-            last_col = temp[:, -1].unsqueeze(1)
-            self.env_goals[:] = torch.cat((temp, last_col.repeat(1, self.cfg.env.num_future_goal_obs, 1)), dim=1)[:]
-            self.cur_goals = self._gather_cur_goals()
-            self.next_goals = self._gather_cur_goals(future=1)
+            # ========== 设置目标点 (goals) ==========
 
+            # 从 numpy 转换 terrain 的目标点表格
+            # terrain.goals: shape [num_rows, num_cols, num_goals, 3]
+            self.terrain_goals = torch.from_numpy(self.terrain.goals).to(self.device).to(torch.float)
+
+            # 每个环境的目标点缓存
+            # shape: [num_envs, num_goals + num_future_goal_obs, 3]
+            # num_future_goal_obs: 表示除了已有的目标，还会额外预测未来的目标点数量
+            self.env_goals = torch.zeros(
+                self.num_envs,
+                self.cfg.terrain.num_goals + self.cfg.env.num_future_goal_obs,
+                3,
+                device=self.device,
+                requires_grad=False
+            )
+
+            # 当前目标点的索引 (每个环境一个)
+            # shape: [num_envs], dtype = long
+            self.cur_goal_idx = torch.zeros(self.num_envs, device=self.device, requires_grad=False, dtype=torch.long)
+
+            # temp: 获取每个环境的目标序列
+            # shape: [num_envs, num_goals, 3]
+            temp = self.terrain_goals[self.terrain_levels, self.terrain_types]
+
+            # last_col: 每个环境的最后一个目标 (最后一列)
+            # shape: [num_envs, 1, 3]
+            last_col = temp[:, -1].unsqueeze(1)
+
+            # 拼接：把 last_col 重复 num_future_goal_obs 次，追加到目标序列后
+            # shape: [num_envs, num_goals + num_future_goal_obs, 3]
+            self.env_goals[:] = torch.cat(
+                (temp, last_col.repeat(1, self.cfg.env.num_future_goal_obs, 1)), dim=1
+            )[:]
+
+            # 当前目标点
+            self.cur_goals = self._gather_cur_goals()
+
+            # 下一个目标点 (future=1)
+            self.next_goals = self._gather_cur_goals(future=1)
+            
     def _parse_cfg(self, cfg):
         self.dt = self.cfg.control.decimation * self.sim_params.dt
         self.obs_scales = self.cfg.normalization.obs_scales
@@ -1158,7 +1427,7 @@ class HumanoidRobot(BaseTask):
         self.max_episode_length = np.ceil(self.max_episode_length_s / self.dt)
 
         self.cfg.domain_rand.push_interval = np.ceil(self.cfg.domain_rand.push_interval_s / self.dt)
-
+ 
     def _draw_height_samples(self):
         """ Draws visualizations for dubugging (slows down simulation a lot).
             Default behaviour: draws height measurement points
@@ -1181,7 +1450,7 @@ class HumanoidRobot(BaseTask):
             z = heights[j]
             sphere_pose = gymapi.Transform(gymapi.Vec3(x, y, z), r=None)
             gymutil.draw_lines(sphere_geom, self.gym, self.viewer, self.envs[i], sphere_pose)
-    
+
     def _draw_goals(self):
         sphere_geom = gymutil.WireframeSphereGeometry(0.1, 32, 32, None, color=(1, 0, 0))
         sphere_geom_cur = gymutil.WireframeSphereGeometry(0.1, 32, 32, None, color=(0, 0, 1))
@@ -1370,11 +1639,11 @@ class HumanoidRobot(BaseTask):
         # Penalize dof velocities too close to the limit
         # clip to max error = 1 rad/s per joint to avoid huge penalties
         return torch.sum((torch.abs(self.dof_vel) - self.dof_vel_limits*self.cfg.rewards.soft_dof_vel_limit).clip(min=0., max=1.), dim=1)
-
+    
     def _reward_torque_limits(self):
         # penalize torques too close to the limit
         return torch.sum((torch.abs(self.torques) - self.torque_limits*self.cfg.rewards.soft_torque_limit).clip(min=0.), dim=1)
-
+    
     def _reward_tracking_lin_vel(self):
         # Tracking of linear velocity commands (xy axes)
         lin_vel_error = torch.sum(torch.square(self.commands[:, :2] - self.base_lin_vel[:, :2]), dim=1)
@@ -1410,3 +1679,299 @@ class HumanoidRobot(BaseTask):
     def _reward_feet_contact_forces(self):
         # penalize high contact forces
         return torch.sum((torch.norm(self.contact_forces[:, self.feet_indices, :], dim=-1) -  self.cfg.rewards.max_contact_force).clip(min=0.), dim=1)
+    
+
+    # def _reward_sin_line(self):
+    #     """S型车道贴合奖励(极简版-正弦轨迹)：
+    #     以中线为中心做正弦振荡:y_ref(x) = y_center + A * sin(2π x / P)。
+    #     - y_center:使用当前目标的y作为中线
+    #     - 若未提供周期P, 则用相邻目标点的平均x间距估计:P = 2 * mean(Δx)
+    #     """
+    #     # 固定参数（基于你的地形生成逻辑单独设定）：
+    #     # - 障碍半径约 0.0625 m（由 hurdle_range=[0.1,0.15], difficulty=0.5 推算）
+    #     # - 相邻障碍中心间距约 spacing = flat_size(1.0m) + 2*0.0625m = 1.125 m
+    #     # - 为做到每根障碍切换一次方向，设半周期=spacing → 周期 P = 2*spacing = 2.25 m
+    #     # - 振幅 A 取略大于障碍半径：A = 0.16 m；贴合容差 k = 0.3 m
+    #     A = 0.16
+    #     P = 2.25
+        
+    #     x = self.root_states[:, 0]
+    #     y = self.root_states[:, 1]
+
+    #     # 中线：取当前目标点的y作为中线（你的地形goals在中线）
+    #     y_center = self.cur_goals[:, 1]
+
+    #     y_ref = y_center + A * torch.sin(2 * np.pi * x / P)
+
+    #     lateral_err = torch.abs(y - y_ref)
+    #     return torch.exp(-lateral_err / 0.3)
+
+    # def _reward_feet_distance(self):
+    #     """鼓励双足侧向间距接近目标值（有助于稳定）"""
+    #     left_y = self.rigid_body_states[:, self.feet_indices[0], 1]
+    #     right_y = self.rigid_body_states[:, self.feet_indices[1], 1]
+    #     cur = torch.abs(left_y - right_y)
+    #     return torch.exp(-torch.abs(cur - 0.25) / 0.3)
+    
+
+    def _reward_reach_goal(self):
+        """到达目标奖励（指数衰减，与跟踪奖励一致）"""
+        distance_to_goal = torch.norm(self.root_states[:, :2] - self.cur_goals[:, :2], dim=1)
+        # 使用指数衰减，距离越近奖励越高
+        return torch.exp(-torch.abs(distance_to_goal) / 0.3)
+    
+    def _reward_heading_tracking(self):
+        """朝向跟踪奖励 - 鼓励机器人朝向目标点"""
+        heading_error = wrap_to_pi(self.target_yaw - self.yaw)
+        return torch.exp(-torch.abs(heading_error) / 0.3)  # 朝向越准确奖励越高
+    
+    def _reward_next_heading_tracking(self):
+        """朝向跟踪奖励 - 鼓励机器人朝向目标点"""
+        next_heading_error = wrap_to_pi(self.next_target_yaw - self.yaw)
+        return torch.exp(-torch.abs(next_heading_error) / 0.3)  # 朝向越准确奖励越高
+    
+    # def _reward_bridge_center(self):
+    #     """独木桥居中奖励 - 鼓励机器人在桥中央行走"""
+    #     # 计算机器人相对于桥中心的位置
+    #     y_offset = torch.abs(self.root_states[:, 1] - self.cur_goals[:, 1])
+    #     # 距离桥中心越近奖励越高
+    #     return torch.exp(-y_offset / 0.3)
+    
+    # ---- add new rewards above -----
+
+    # def _reward_penalty_slippage(self):
+    #     """滑移惩罚奖励 - 惩罚脚部与地面接触时的滑移行为"""
+    #     foot_vel = self.rigid_body_states[:, self.feet_indices, 7:10]  # 获取脚部线速度 [x, y, z]
+    #     contact_force = self.contact_forces[:, self.feet_indices, :]   # 获取脚部接触力
+    #     # 计算滑移惩罚：脚部速度 × 接触状态（接触力>1N时认为有接触）
+    #     rew = torch.sum(torch.norm(foot_vel, dim=-1) * (torch.norm(contact_force, dim=-1) > 1.), dim=1)
+    #     return rew
+
+    # def _reward_feet_max_height_for_this_air(self):
+    #     """脚部空中最大高度奖励 - 鼓励脚部在腾空时达到合适高度"""
+    #     contact = self.contact_forces[:, self.feet_indices, 2] > 1.  # 检测脚部是否接触地面（z方向力>1N）
+    #     contact_filt = torch.logical_or(contact, self.last_contacts)  # 结合上一帧的接触状态
+    #     from_air_to_contact = torch.logical_and(contact_filt, ~self.last_contacts_filt)  # 检测从空中到接触的瞬间
+    #     self.last_contacts = contact  # 更新接触状态
+    #     self.last_contacts_filt = contact_filt  # 更新过滤后的接触状态
+    #     
+    #     # 更新脚部在空中的最大高度（z轴高度）
+    #     self.feet_air_max_height = torch.max(self.feet_air_max_height, self.rigid_body_states[:, self.feet_indices, 2])
+    #     
+    #     # 计算高度奖励：期望高度与实际最大高度的差值（只在首次接触地面时给予奖励）
+    #     rew_feet_max_height = torch.sum((torch.clamp_min(self.cfg.rewards.desired_feet_max_height_for_this_air - self.feet_air_max_height, 0)) * from_air_to_contact, dim=1)
+    #     self.feet_air_max_height *= ~contact_filt  # 重置非接触状态的脚部高度
+    #     return rew_feet_max_height
+
+    # def _reward_feet_heading_alignment(self):
+    #     """脚部朝向对齐奖励 - 鼓励脚部朝向与身体朝向一致"""
+    #     left_quat = self.rigid_body_states[:, self.feet_indices[0], 3:7]   # 左脚四元数
+    #     right_quat = self.rigid_body_states[:, self.feet_indices[1], 3:7]  # 右脚四元数
+    #     
+    #     # 计算左脚朝向角度
+    #     forward_left_feet = quat_apply(left_quat, self.forward_vec)
+    #     heading_left_feet = torch.atan2(forward_left_feet[:, 1], forward_left_feet[:, 0])
+    #     
+    #     # 计算右脚朝向角度
+    #     forward_right_feet = quat_apply(right_quat, self.forward_vec)
+    #     heading_right_feet = torch.atan2(forward_right_feet[:, 1], forward_right_feet[:, 0])
+    #     
+    #     # 计算身体朝向角度
+    #     root_forward = quat_apply(self.base_quat, self.forward_vec)
+    #     heading_root = torch.atan2(root_forward[:, 1], root_forward[:, 0])
+    #     
+    #     # 计算脚部朝向与身体朝向的角度差
+    #     heading_diff_left = torch.abs(wrap_to_pi(heading_left_feet - heading_root))
+    #     heading_diff_right = torch.abs(wrap_to_pi(heading_right_feet - heading_root))
+    #     return heading_diff_left + heading_diff_right
+
+    # def _reward_penalty_feet_ori(self):
+    #     """脚部姿态惩罚 - 惩罚脚部不正确的姿态（脚部应该平行于地面）"""
+    #     left_quat = self.rigid_body_states[:, self.feet_indices[0], 3:7]   # 左脚四元数
+    #     left_gravity = quat_rotate_inverse(left_quat, self.gravity_vec)   # 左脚重力向量（在脚部坐标系中）
+    #     right_quat = self.rigid_body_states[:, self.feet_indices[1], 3:7]  # 右脚四元数
+    #     right_gravity = quat_rotate_inverse(right_quat, self.gravity_vec) # 右脚重力向量（在脚部坐标系中）
+    #     
+    #     # 计算脚部姿态误差：理想情况下重力应该只在z轴方向（x,y方向应该为0）
+    #     return torch.sum(torch.square(left_gravity[:, :2]), dim=1)**0.5 + torch.sum(torch.square(right_gravity[:, :2]), dim=1)**0.5
+
+    # def _reward_feet_heading_alignment_contact(self):
+    #     """脚部朝向对齐奖励（仅接触时） - 只在脚部接触地面时检查朝向对齐"""
+    #     left_quat = self.rigid_body_states[:, self.feet_indices[0], 3:7]   # 左脚四元数
+    #     right_quat = self.rigid_body_states[:, self.feet_indices[1], 3:7]  # 右脚四元数
+    #     
+    #     # 计算左脚朝向角度
+    #     forward_left_feet = quat_apply(left_quat, self.forward_vec)
+    #     heading_left_feet = torch.atan2(forward_left_feet[:, 1], forward_left_feet[:, 0])
+    #     
+    #     # 计算右脚朝向角度
+    #     forward_right_feet = quat_apply(right_quat, self.forward_vec)
+    #     heading_right_feet = torch.atan2(forward_right_feet[:, 1], forward_right_feet[:, 0])
+    #     
+    #     # 计算身体朝向角度
+    #     root_forward = quat_apply(self.base_quat, self.forward_vec)
+    #     heading_root = torch.atan2(root_forward[:, 1], root_forward[:, 0])
+    #     
+    #     # 计算脚部朝向与身体朝向的角度差（只在接触时计算）
+    #     heading_diff_left = torch.abs(wrap_to_pi(heading_left_feet - heading_root))
+    #     heading_diff_right = torch.abs(wrap_to_pi(heading_right_feet - heading_root))
+    #     return heading_diff_left*self.contacts_filt[:, 0] + heading_diff_right*self.contacts_filt[:, 1]
+
+    # def _reward_penalty_feet_ori_contact(self):
+    #     """脚部姿态惩罚（仅接触时） - 只在脚部接触地面时检查姿态正确性"""
+    #     left_quat = self.rigid_body_states[:, self.feet_indices[0], 3:7]   # 左脚四元数
+    #     left_gravity = quat_rotate_inverse(left_quat, self.gravity_vec)   # 左脚重力向量（在脚部坐标系中）
+    #     right_quat = self.rigid_body_states[:, self.feet_indices[1], 3:7]  # 右脚四元数
+    #     right_gravity = quat_rotate_inverse(right_quat, self.gravity_vec) # 右脚重力向量（在脚部坐标系中）
+    #     
+    #     # 计算脚部姿态误差（只在接触时计算）
+    #     error = torch.norm(left_gravity[:, :2], dim=-1) * self.contacts_filt[:, 0] + torch.norm(right_gravity[:, :2], dim=-1) * self.contacts_filt[:, 1]
+    #     return error
+
+    # def _reward_gradient_aware_stride(self):
+    #     """梯度感知步长奖励 - 根据地形坡度调整最优步长"""
+    #     forward_gradient = self._get_forward_height_gradient()  # 获取前方地形高度梯度
+        
+    #     # 根据坡度调整最优步长：
+    #     # - 平地：大步长（0.6m）
+    #     # - 上坡：小步长（0.3m）
+    #     # - 下坡：中等步长（0.45m）
+    #     target_stride_length = torch.clamp(0.6 - 0.3 * torch.abs(forward_gradient), 0.3, 0.8)
+        
+    #     # 计算当前步长（通过脚部位置估计）
+    #     current_stride = self._estimate_current_stride_length()
+    #     stride_error = torch.abs(current_stride - target_stride_length)
+        
+    #     # 使用指数函数给予奖励：步长越接近目标值奖励越高
+    #     return torch.exp(-stride_error / 0.1)
+
+    # def _reward_terrain_anticipatory_balance(self):
+    #     """地形预测性平衡奖励 - 根据即将踩踏的地形提前调整重心"""
+    #     # 分析即将踩踏的地面高度
+    #     next_step_heights = self._predict_next_footstep_heights()
+        
+    #     # 如果下一步是台阶，提前调整重心
+    #     step_height_diff = next_step_heights[:, 1] - next_step_heights[:, 0]  # 左右脚高度差
+        
+    #     # 上台阶时鼓励重心前移（提高稳定性）
+    #     upward_step = step_height_diff > 0.05  # 检测是否为上台阶
+    #     target_com_x = torch.where(upward_step, 0.05, 0.0)  # 上台阶时重心前移5cm
+        
+    #     # 计算当前重心位置与目标重心的误差
+    #     current_com_x = self._estimate_center_of_mass()[:, 0]
+    #     com_error = torch.abs(current_com_x - target_com_x)
+    #     
+    #     # 使用指数函数给予奖励：重心位置越接近目标值奖励越高
+    #     return torch.exp(-com_error / 0.02)
+
+    # def _estimate_current_stride_length(self):
+    #     """估计当前步长 - 通过左右脚位置计算步长"""
+    #     left_foot_pos = self.rigid_body_states[:, self.feet_indices[0], :3]   # 左脚位置
+    #     right_foot_pos = self.rigid_body_states[:, self.feet_indices[1], :3]  # 右脚位置
+    #     stride_length = torch.norm(left_foot_pos - right_foot_pos, dim=1)      # 计算两脚间距离
+    #     return stride_length
+
+    # def get_observations_groups(self):
+    #     """
+    #     构建观测组字典 - 兼容多教师蒸馏训练
+        
+    #     Returns:
+    #         dict: 包含不同观测组的字典，用于多教师蒸馏训练
+    #     """
+    #     # 计算各个观测组件
+    #     imu_obs = torch.stack((self.roll, self.pitch), dim=1)
+        
+    #     # 本体感受信息 (proprio) - 学生策略的基础输入
+    #     proprio = torch.cat((
+    #         self.base_ang_vel * self.obs_scales.ang_vel,   # 3
+    #         imu_obs,    # 2
+    #         0*self.delta_yaw[:, None], # 1  # 置零，让学生从视觉学习朝向
+    #         self.delta_yaw[:, None], # 1
+    #         self.delta_next_yaw[:, None],  # 1
+    #         0*self.commands[:, 0:2],  # 2
+    #         self.commands[:, 0:1],  # 1
+    #         (self.env_class != 17).float()[:, None],  # 1
+    #         (self.env_class == 17).float()[:, None], # 1
+    #         (self.dof_pos - self.default_dof_pos_all) * self.obs_scales.dof_pos, # 19
+    #         self.dof_vel * self.obs_scales.dof_vel,  # 19
+    #         self.action_history_buf[:, -1], # 19
+    #         self.contact_filt.float()-0.5, # 2
+    #         ),dim=-1)
+        
+    #     # 高度扫描信息 (height_scan) - 学生策略的环境感知
+    #     if self.cfg.terrain.measure_heights:
+    #         height_scan = torch.clip(self.root_states[:, 2].unsqueeze(1) - 0.3 - self.measured_heights, -1, 1.)
+    #     else:
+    #         height_scan = torch.zeros(self.num_envs, 0, device=self.device)
+        
+    #     # 教师观测 (teacher) - 包含特权信息，用于教师策略
+    #     teacher_obs = torch.cat((
+    #         proprio,  # 基础本体感受
+    #         height_scan,  # 高度信息
+    #         self.base_lin_vel * self.obs_scales.lin_vel,  # 特权信息：线速度
+    #         self.gravity_vec,  # 重力向量
+    #         self.commands[:, :3] * torch.tensor([self.obs_scales.lin_vel, self.obs_scales.lin_vel, self.obs_scales.ang_vel], device=self.device),  # 指令信息
+    #     ), dim=-1)
+        
+    #     # 特权信息 (privileged) - 用于critic网络训练
+    #     privileged = torch.cat((
+    #         self.base_lin_vel * self.obs_scales.lin_vel,  # 3
+    #         self.gravity_vec,  # 3
+    #         self.commands[:, :3] * torch.tensor([self.obs_scales.lin_vel, self.obs_scales.lin_vel, self.obs_scales.ang_vel], device=self.device),  # 3
+    #     ), dim=-1)
+        
+    #     # 地形ID信息 (terrain_id) - 用于教师选择
+    #     if hasattr(self, 'env_class'):
+    #         terrain_id = self.env_class.float().unsqueeze(-1)  # [num_envs, 1]
+    #     else:
+    #         terrain_id = torch.zeros(self.num_envs, 1, device=self.device)
+        
+    #     # 历史信息 (history) - 本体感受的时序信息
+    #     if hasattr(self, 'obs_history_buf') and self.obs_history_buf is not None:
+    #         history = self.obs_history_buf.view(self.num_envs, -1)
+    #     else:
+    #         # 创建虚拟历史信息
+    #         history_len = getattr(self.cfg.env, 'history_len', 10)
+    #         history_dim = proprio.shape[-1]
+    #         history = torch.zeros(self.num_envs, history_len * history_dim, device=self.device)
+        
+    #     # 学生策略观测 (policy) - 不包含特权信息
+    #     policy_obs = torch.cat((
+    #         proprio,
+    #         height_scan,
+    #     ), dim=-1)
+        
+    #     # Critic观测 - 包含特权信息用于价值函数估计
+    #     critic_obs = torch.cat((
+    #         policy_obs,
+    #         privileged,
+    #     ), dim=-1)
+        
+    #     # 构建观测组字典
+    #     obs_groups = {
+    #         "policy": policy_obs,           # 学生策略输入（公开信息）
+    #         "critic": critic_obs,           # Critic输入（包含特权信息）
+    #         "teacher": teacher_obs,         # 教师策略输入（包含特权信息）
+    #         "terrain_info": terrain_id,    # 地形类型信息，用于路由到对应教师
+    #         "privileged": privileged,      # 纯特权信息
+    #         "history": history,            # 历史观测信息
+    #         "height_scan": height_scan,    # 高度扫描信息
+    #         "proprio": proprio,            # 本体感受信息
+    #     }
+
+    #     return obs_groups
+
+    def get_observations(self):
+        """
+        返回完整的731维观测 - 与教师模型训练时保持一致
+        
+        Returns:
+            torch.Tensor: 完整的观测张量，维度与教师模型匹配
+        """
+        # 确保已经计算了观测
+        if not hasattr(self, 'obs_buf') or self.obs_buf is None:
+            self.compute_observations()
+        
+        # 直接返回完整的obs_buf，这样就能得到731维的观测
+        # 这与教师模型训练时的观测结构完全一致
+        return self.obs_buf

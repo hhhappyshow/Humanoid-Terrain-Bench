@@ -1,0 +1,6 @@
+{
+    "ros.distro": "foxy",
+    "python.analysis.extraPaths": [
+        "./rsl_rl"
+    ]
+}

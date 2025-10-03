@@ -306,20 +306,29 @@ class ActorCriticRMA(nn.Module):
         self.std.data = new_std.data
 
 def get_activation(act_name):
-    if act_name == "elu":
-        return nn.ELU()
-    elif act_name == "selu":
-        return nn.SELU()
-    elif act_name == "relu":
-        return nn.ReLU()
-    elif act_name == "crelu":
-        return nn.ReLU()
-    elif act_name == "lrelu":
-        return nn.LeakyReLU()
-    elif act_name == "tanh":
-        return nn.Tanh()
-    elif act_name == "sigmoid":
-        return nn.Sigmoid()
+    # 如果已经是激活函数对象，直接返回
+    if isinstance(act_name, nn.Module):
+        return act_name
+    
+    # 处理字符串类型的激活函数名
+    if isinstance(act_name, str):
+        if act_name == "elu":
+            return nn.ELU()
+        elif act_name == "selu":
+            return nn.SELU()
+        elif act_name == "relu":
+            return nn.ReLU()
+        elif act_name == "crelu":
+            return nn.ReLU()
+        elif act_name == "lrelu":
+            return nn.LeakyReLU()
+        elif act_name == "tanh":
+            return nn.Tanh()
+        elif act_name == "sigmoid":
+            return nn.Sigmoid()
+        else:
+            print(f"Invalid activation function: {act_name}! Using ELU as default.")
+            return nn.ELU()
     else:
-        print("invalid activation function!")
-        return None
+        print(f"Invalid activation function type: {type(act_name)}! Using ELU as default.")
+        return nn.ELU()

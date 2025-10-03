@@ -1,0 +1,31 @@
+_wandb:
+    value:
+        cli_version: 0.21.0
+        e:
+            lol2d93ck4defn1nbq3k7nloazpama5u:
+                email: kelun0603@gmail.com
+                executable: /home/guyi/miniconda3/envs/pbhc/bin/python
+                git:
+                    commit: a23c1bf6ea8591005b95766377537a8059bbf3a9
+                    remote: https://github.com/shiki-ta/Humanoid-Terrain-Bench.git
+                host: 4090-8
+                os: Linux-5.15.0-69-generic-x86_64-with-glibc2.17
+                program: <python with no main file>
+                python: CPython 3.8.20
+                root: /home/lsf_storage/homes/guyi/kelun/Humanoid-Terrain-Bench-kelun
+                startedAt: "2025-09-29T21:12:57.863679Z"
+                writerId: lol2d93ck4defn1nbq3k7nloazpama5u
+        m: []
+        python_version: 3.8.20
+        t:
+            "1":
+                - 105
+            "2":
+                - 105
+            "3":
+                - 2
+                - 13
+            "4": 3.8.20
+            "5": 0.21.0
+            "12": 0.21.0
+            "13": linux-x86_64

@@ -16,21 +16,24 @@ class combine_config:
         ]
 
         multiplication = [
-                [single[8],single[2],],#gap_bridge,0
-                [single[6],single[8]],#wave_gap,1
-                [single[6],single[2]],#wave_bridge,2
-                [single[8],single[6],single[5],single[2]],#wave_bridge,3
-                [single[5],single[6],single[2]],#wave_bridge,3
+                [single[2],single[6],],#gap_bridge,11
+                [single[6],single[8]],#wave_gap,12
+                [single[6],single[2]],#wave_bridge,13
+                [single[8],single[6],single[5],single[2]],#wave_bridge,14
+                [single[5],single[6],single[2]],#wave_bridge,15
         ]
 
         addition = [
-                [single[5],single[2],single[4],single[8]]
+                [single[5],single[2],single[4],single[8]]  #10
         ]
 
         proportions = [
-                ("single", 5, 0.3),#
-                # ("addition", 0, 0.5),
-                # ("multiplication", 3, 0.4),
+                # 只使用单一地形进行多教师蒸馏，确保每个地形都有对应的教师模型
+                ("single", 7, 1.0),  
+                # ("single", 2, 0.2),  
+                # ("single", 3, 0.2),  
+                # ("single", 6, 0.2), 
+                # ("single", 7, 0.2),  
         ]
 
 class generator:
