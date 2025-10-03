@@ -180,7 +180,7 @@ class H1_2FixCfg( LeggedRobotCfg ):
         class scales:
             """各项奖励的权重系数 - 恢复原始设置"""
             termination = -0.0          # 终止惩罚（设为0）
-            tracking_lin_vel = 1.2      # 原:1.0 → 新:1.5 (策略6：提高速度跟踪权重)
+            tracking_lin_vel = 2.0      # 原:1.0 → 新:1.5 (策略6：提高速度跟踪权重)
             tracking_ang_vel = 1.0      # 原:0.5 → 新:0.8 (策略6：提高速度跟踪权重)
             lin_vel_z = -2.0           # 垂直速度惩罚（避免跳跃）
             ang_vel_xy = -0.05         # 恢复原始权重
@@ -194,14 +194,19 @@ class H1_2FixCfg( LeggedRobotCfg ):
             feet_air_time = 1.0        # 恢复原始权重
             stumble = -0.0        # 恢复：不惩罚绊倒
             stand_still = -0.          # 恢复：不惩罚静止
-            foot_clearance = 3        # 鼓励抬脚高度（当脚处于摆动时）
+            foot_clearance = 0.       # 鼓励抬脚高度（当脚处于摆动时）flat无用，wave有用
+            dof_pos_limits = -.0       # 关节位置限制惩罚 新增
+            feet_forward_alignment = 0  # 脚部前向对齐奖励 新增
+            # dof_vel_limits = -1e-3      # 关节速度限制惩罚 新增
+            # dof_torque_limits = -1e-3    # 关节力矩限制惩罚 新增
+
             
-            # reach_goal = 1.0           # 到达目标奖励
+            reach_goal = 2.0           # 到达目标奖励 
             # heading_tracking = 1.0      # 朝向跟踪奖励
             # next_heading_tracking = 1.0  # 下一朝向跟踪奖励
             # bridge_center = 1.0         # 桥上居中奖励
 
-        only_positive_rewards = True    # 只使用正奖励（避免早期终止问题）
+        only_positive_rewards = False    # 只使用正奖励（避免早期终止问题）
         tracking_sigma = 0.25          # 跟踪奖励的标准差参数
         soft_dof_pos_limit = 1.        # 关节位置软限制（URDF限制的百分比）
         soft_dof_vel_limit = 1.        # 关节速度软限制
