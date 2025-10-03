@@ -34,6 +34,7 @@ import os  # 操作系统接口
 from datetime import datetime  # 日期时间处理
 
 # 导入项目相关模块
+# from legged_gym import LEGGED_GYM_ROOT_DIR, LEGGED_GYM_ENVS_DIR  # 导入项目路径常量
 from legged_gym.envs import *  # 导入所有环境类
 from legged_gym.utils import get_args, task_registry  # 导入参数解析和任务注册工具
 import wandb  # 权重和偏置(Weights & Biases)实验跟踪工具
