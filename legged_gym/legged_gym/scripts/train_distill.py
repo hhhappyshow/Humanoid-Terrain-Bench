@@ -66,7 +66,14 @@ def main():
     # ========== 配置训练参数 ==========
     # 教师模型路径列表 - 使用训练好的slope模型进行测试
     teacher_model_paths = [
-        "/home/rashare/zhong/Humanoid-Terrain-Bench-kelun/legged_gym/logs/h1_distillation/slope7/model_15000.pt",     # 教师0: slope (斜坡) - 已训练15000次迭代
+        "/home/rashare/zhong/Humanoid-Terrain-Bench-kelun/legged_gym/logs/h1_distillation/hurdle1/model_50000.pt",      # 教师0: parkour (跑酷0)
+        "/home/rashare/zhong/Humanoid-Terrain-Bench-kelun/legged_gym/logs/h1_distillation/bridge2/model_164000.pt",     # 教师1: bridge (桥梁2)
+        "/home/rashare/zhong/Humanoid-Terrain-Bench-kelun/legged_gym/logs/h1_distillation/flat3/model_0.pt",            # 教师2: flat (平地3) - 已训练15000次迭代
+        "/home/rashare/zhong/Humanoid-Terrain-Bench-kelun/legged_gym/logs/h1_distillation/uneven4/model_73000.pt",      # 教师3: uneven (不平整4)
+        # "/home/rashare/zhong/Humanoid-Terrain-Bench-kelun/legged_gym/logs/h1_distillation/stair5/model_50000.pt",     # 教师4: stair (楼梯5) 
+        "/home/rashare/zhong/Humanoid-Terrain-Bench-kelun/legged_gym/logs/h1_distillation/wave6/model_0.pt",            # 教师4: wave (波浪6) 
+        "/home/rashare/zhong/Humanoid-Terrain-Bench-kelun/legged_gym/logs/h1_distillation/slope7/model_15000.pt",       # 教师5: slope (斜坡7)
+        "/home/rashare/zhong/Humanoid-Terrain-Bench-kelun/legged_gym/logs/h1_distillation/gap8/model_8000.pt",          # 教师6: gap (间隙8) 
     ]
     
     # 验证教师模型路径是否存在
