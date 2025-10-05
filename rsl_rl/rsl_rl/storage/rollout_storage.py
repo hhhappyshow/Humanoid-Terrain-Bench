@@ -46,6 +46,7 @@ class RolloutStorage:
             self.action_mean = None
             self.action_sigma = None
             self.hidden_states = None
+            self.terrain_types = None  # 新增：地形类型信息
         def clear(self):
             self.__init__()
 
@@ -75,6 +76,9 @@ class RolloutStorage:
         self.advantages = torch.zeros(num_transitions_per_env, num_envs, 1, device=self.device)
         self.mu = torch.zeros(num_transitions_per_env, num_envs, *actions_shape, device=self.device)
         self.sigma = torch.zeros(num_transitions_per_env, num_envs, *actions_shape, device=self.device)
+        
+        # 新增：地形类型存储 [num_transitions_per_env, num_envs]
+        self.terrain_types = torch.zeros(num_transitions_per_env, num_envs, dtype=torch.long, device=self.device)
 
         self.num_transitions_per_env = num_transitions_per_env
         self.num_envs = num_envs
@@ -97,6 +101,29 @@ class RolloutStorage:
         self.actions_log_prob[self.step].copy_(transition.actions_log_prob.view(-1, 1))
         self.mu[self.step].copy_(transition.action_mean)
         self.sigma[self.step].copy_(transition.action_sigma)
+        # 新增：存储地形类型信息
+        if transition.terrain_types is not None:
+            terrain_tensor = torch.as_tensor(transition.terrain_types, device=self.terrain_types.device).view(-1)
+            # 动态检查维度匹配
+            print(f"transition.terrain_types: {transition.terrain_types}")
+            print(f"self.num_envs: {self.num_envs}")
+            print(f"terrain_tensor: {terrain_tensor}")
+                       
+            if terrain_tensor.shape[0] != self.num_envs:
+                print(f"[WARNING] 地形类型维度不匹配: expected {self.num_envs}, got {terrain_tensor.shape[0]}")
+                # 如果维度不匹配，截断或填充
+                if terrain_tensor.shape[0] < self.num_envs:
+                    # 填充到所需长度
+                    padded_tensor = torch.zeros(self.num_envs, dtype=terrain_tensor.dtype, device=terrain_tensor.device)
+                    padded_tensor[:terrain_tensor.shape[0]] = terrain_tensor
+                    self.terrain_types[self.step].copy_(padded_tensor)
+                else:
+                    # 截断到所需长度
+                    self.terrain_types[self.step].copy_(terrain_tensor[:self.num_envs])
+            else:
+                self.terrain_types[self.step].copy_(terrain_tensor)
+            print(f"self.terrain_types: {self.terrain_types}")
+            assert False
 
         self._save_hidden_states(transition.hidden_states)
         self.step += 1
@@ -170,6 +197,7 @@ class RolloutStorage:
         advantages = self.advantages.flatten(0, 1)
         old_mu = self.mu.flatten(0, 1)
         old_sigma = self.sigma.flatten(0, 1)
+        terrain_types = self.terrain_types.flatten(0, 1)  # [num_envs * num_transitions_per_env]
 
         for epoch in range(num_epochs):
             for i in range(num_mini_batches):
@@ -187,10 +215,11 @@ class RolloutStorage:
                 advantages_batch = advantages[batch_idx]
                 old_mu_batch = old_mu[batch_idx]
                 old_sigma_batch = old_sigma[batch_idx]
+                terrain_batch = terrain_types[batch_idx]  # 新增：地形批次
 
                 
                 yield obs_batch, critic_observations_batch, actions_batch, target_values_batch, advantages_batch, returns_batch, \
-                       old_actions_log_prob_batch, old_mu_batch, old_sigma_batch, (None, None), None
+                       old_actions_log_prob_batch, old_mu_batch, old_sigma_batch, (None, None), None, terrain_batch
 
     # for RNNs only
     def reccurent_mini_batch_generator(self, num_mini_batches, num_epochs=8):
@@ -226,6 +255,9 @@ class RolloutStorage:
                 advantages_batch = self.advantages[:, start:stop]
                 values_batch = self.values[:, start:stop]
                 old_actions_log_prob_batch = self.actions_log_prob[:, start:stop]
+                
+                # 新增：地形批次
+                terrain_batch = self.terrain_types[:, start:stop]
 
                 # reshape to [num_envs, time, num layers, hidden dim] (original shape: [time, num_layers, num_envs, hidden_dim])
                 # then take only time steps after dones (flattens num envs and time dimensions),
@@ -240,6 +272,6 @@ class RolloutStorage:
                 hid_c_batch = hid_c_batch[0] if len(hid_c_batch)==1 else hid_a_batch
 
                 yield obs_batch, critic_obs_batch, actions_batch, values_batch, advantages_batch, returns_batch, \
-                       old_actions_log_prob_batch, old_mu_batch, old_sigma_batch, (hid_a_batch, hid_c_batch), masks_batch
+                       old_actions_log_prob_batch, old_mu_batch, old_sigma_batch, (hid_a_batch, hid_c_batch), masks_batch, terrain_batch
                 
                 first_traj = last_traj

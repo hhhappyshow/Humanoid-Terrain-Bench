@@ -121,11 +121,11 @@ def play(args):
         env=env, 
         name=args.task, 
         args=args,
-        # runner_class_name = "MultiTeacherDistillationRunner"
-        runner_class_name = "OnPolicyRunner"
+        runner_class_name = "MultiTeacherDistillationRunner"
+        # runner_class_name = "OnPolicyRunner"
     )
-    ppo_runner.load("/home/rashare/zhong/Humanoid-Terrain-Bench-kelun/legged_gym/logs/h1_distillation/slope7/model_15000.pt")
-    # ppo_runner.load("/home/rashare/zhong/Humanoid-Terrain-Bench-kelun/legged_gym/legged_gym/scripts/logs/h1_2_fix_1/Sep30_21-47-48/model_0.pt")
+    # ppo_runner.load("/home/rashare/zhong/Humanoid-Terrain-Bench-kelun/legged_gym/logs/h1_distillation/slope7/model_15000.pt")
+    ppo_runner.load("/home/rashare/zhong/Humanoid-Terrain-Bench-kelun/legged_gym/legged_gym/scripts/logs/h1_2_fix_1/Sep30_21-47-48/model_0.pt")
     
     # assert False
     # 获取推理策略

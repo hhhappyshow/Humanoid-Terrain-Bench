@@ -549,8 +549,8 @@ class HumanoidRobot(BaseTask):
                             self.delta_next_yaw[:, None],  # 1
                             0*self.commands[:, 0:2],  # 2
                             self.commands[:, 0:1],  #[1,1]  # 1
-                            (self.env_class != 17).float()[:, None],  #1
-                            (self.env_class == 17).float()[:, None], # 1
+                            (self.env_terrain != 17).float()[:, None],  #1
+                            (self.env_terrain == 17).float()[:, None], # 1
                             (self.dof_pos - self.default_dof_pos_all) * self.obs_scales.dof_pos, # h1:19
                             self.dof_vel * self.obs_scales.dof_vel,  # h1:19
                             self.action_history_buf[:, -1], # h1:19
@@ -966,6 +966,13 @@ class HumanoidRobot(BaseTask):
                 # 检查是否达到升级条件
                 if self.env_consecutive_success[env_id] >= success_threshold:
                     self.terrain_levels[env_id] += 1
+                    #在下一等级找到遇上一等级相同的地形类型
+                    for i in range(self.cfg.terrain.num_cols):
+                        if self.terrain_class[self.terrain_levels[env_id], i] == self.terrain_class[self.terrain_levels[env_id]-1, self.env_col[env_id]]:
+                            self.env_col[env_id] = i
+                            break
+                        elif i == self.cfg.terrain.num_cols - 1: #如果下一等级没有相同的地形类型，则使用最后一列
+                            self.env_col[env_id] = self.cfg.terrain.num_cols - 1
                     self.env_consecutive_success[env_id] = 0  # 重置计数器
                     # print(f"环境 {env_id} 连续成功{success_threshold}次，升级到等级 {self.terrain_levels[env_id]}")
             else:
@@ -976,6 +983,13 @@ class HumanoidRobot(BaseTask):
                 # 检查是否达到降级条件
                 if self.env_consecutive_failure[env_id] >= failure_threshold:
                     self.terrain_levels[env_id] -= 1
+                    #在上一等级找到遇上一等级相同的地形类型
+                    for i in range(self.cfg.terrain.num_cols):
+                        if self.terrain_class[self.terrain_levels[env_id], i] == self.terrain_class[self.terrain_levels[env_id]+1, self.env_col[env_id]]:
+                            self.env_col[env_id] = i
+                            break
+                        elif i == self.cfg.terrain.num_cols - 1: #如果上一等级没有相同的地形类型，则使用最后一列
+                            self.env_col[env_id] = self.cfg.terrain.num_cols - 1
                     self.env_consecutive_failure[env_id] = 0  # 重置计数器
                     # print(f"环境 {env_id} 连续失败{failure_threshold}次，降级到等级 {self.terrain_levels[env_id]}")
         
@@ -987,14 +1001,33 @@ class HumanoidRobot(BaseTask):
         )
         
         # 更新环境类别和目标
-        self.env_class[env_ids] = self.terrain_class[self.terrain_levels[env_ids], self.terrain_types[env_ids]]
-        self.env_origins[env_ids] = self.terrain_origins[self.terrain_levels[env_ids], self.terrain_types[env_ids]]
+        self.env_terrain[env_ids] = self.terrain_class[self.terrain_levels[env_ids], self.env_col[env_ids]]
+        self.env_origins[env_ids] = self.terrain_origins[self.terrain_levels[env_ids], self.env_col[env_ids]]
         
-        temp = self.terrain_goals[self.terrain_levels, self.terrain_types]
+        temp = self.terrain_goals[self.terrain_levels, self.env_col]
         last_col = temp[:, -1].unsqueeze(1)
         self.env_goals[:] = torch.cat((temp, last_col.repeat(1, self.cfg.env.num_future_goal_obs, 1)), dim=1)[:]
         self.cur_goals = self._gather_cur_goals()
         self.next_goals = self._gather_cur_goals(future=1)
+
+    def get_map_terrain(self):
+        """获取整个地图的地形类型信息
+        
+        Returns:
+            torch.Tensor: 地形类型 [num_envs] - 返回整个地图的terrain_type
+        """
+        
+        return self.terrain.terrain_type
+    
+    def get_env_terrain(self):
+        """获取当前环境的地形类别信息
+        
+        Returns:
+            torch.Tensor: 地形类别 [num_envs] - 返回env_terrain的具体类别值
+        """
+        # 返回env_terrain (每个环境的具体地形类别)
+        # 这包含了地形的实际类别值，如hurdle=5, gap=6等
+        return self.env_terrain
 
     def _init_buffers(self):
         """ Initialize torch tensors which will contain simulation states and processed quantities
@@ -1323,7 +1356,7 @@ class HumanoidRobot(BaseTask):
 
             # 每个环境的类别 (class)，通常代表地形类别
             # shape: [num_envs]
-            self.env_class = torch.zeros(self.num_envs, device=self.device, requires_grad=False)
+            self.env_terrain = torch.zeros(self.num_envs, device=self.device, requires_grad=False)
 
             # ========== 随机化环境的地形等级与类别 ==========
 
@@ -1339,16 +1372,19 @@ class HumanoidRobot(BaseTask):
             # shape: [num_envs]
             self.terrain_levels = torch.randint(0, max_init_level+1, (self.num_envs,), device=self.device)
 
-            # 为每个环境分配地形类型
-            # 按列来划分：假设一共有 num_cols 列，每列是一种 terrain type
+            # 为每个环境分配列索引
+            # 按列来划分：假设一共有 num_cols 列
             # torch.arange(self.num_envs) -> [0, 1, 2, ..., num_envs-1]
             # 除以 (num_envs / num_cols) 再取 floor -> 得到 [0,...,num_cols-1]
             # shape: [num_envs]
-            self.terrain_types = torch.div(
+            self.env_col = torch.div(
                 torch.arange(self.num_envs, device=self.device),
                 (self.num_envs/self.cfg.terrain.num_cols),
                 rounding_mode='floor'
             ).to(torch.long)
+            # self.env_col = self.terrain.terrain_type
+            # print(f"env_col: {self.env_col}")
+            # assert False
 
             # 保存最大 terrain 等级 (即 num_rows)
             self.max_terrain_level = self.cfg.terrain.num_rows
@@ -1358,18 +1394,20 @@ class HumanoidRobot(BaseTask):
             # 每个地形格子都有一个起点 (x,y,z)
             self.terrain_origins = torch.from_numpy(self.terrain.env_origins).to(self.device).to(torch.float)
 
-            # 按照随机采样的 terrain_levels 和 terrain_types，给每个环境分配起点坐标
+            # 按照随机采样的 terrain_levels 和 env_col，给每个环境分配起点坐标
             # 例如 terrain_origins[level, type] -> [3] [xyz]
             # env_origins: shape [num_envs, 3]
-            self.env_origins[:] = self.terrain_origins[self.terrain_levels, self.terrain_types]
+            self.env_origins[:] = self.terrain_origins[self.terrain_levels, self.env_col]
 
             # terrain_class: 保存每个地形格子的类别 (由 numpy 转 tensor)
             # shape: [num_rows, num_cols]
             self.terrain_class = torch.from_numpy(self.terrain.terrain_type).to(self.device).to(torch.float)
+            print(f"self.terrain_class:{self.terrain_class}")
 
-            # 为每个环境分配类别，存入 env_class
-            self.env_class[:] = self.terrain_class[self.terrain_levels, self.terrain_types]
-
+            # 为每个环境分配类别，存入 env_terrain
+            self.env_terrain[:] = self.terrain_class[self.terrain_levels, self.env_col]
+            print(f"self.env_terrain:{self.env_terrain}")
+            # assert False
             # ========== 设置目标点 (goals) ==========
 
             # 从 numpy 转换 terrain 的目标点表格
@@ -1393,7 +1431,7 @@ class HumanoidRobot(BaseTask):
 
             # temp: 获取每个环境的目标序列
             # shape: [num_envs, num_goals, 3]
-            temp = self.terrain_goals[self.terrain_levels, self.terrain_types]
+            temp = self.terrain_goals[self.terrain_levels, self.env_col]
 
             # last_col: 每个环境的最后一个目标 (最后一列)
             # shape: [num_envs, 1, 3]
@@ -1455,7 +1493,7 @@ class HumanoidRobot(BaseTask):
         sphere_geom = gymutil.WireframeSphereGeometry(0.1, 32, 32, None, color=(1, 0, 0))
         sphere_geom_cur = gymutil.WireframeSphereGeometry(0.1, 32, 32, None, color=(0, 0, 1))
         sphere_geom_reached = gymutil.WireframeSphereGeometry(self.cfg.env.next_goal_threshold, 32, 32, None, color=(0, 1, 0))
-        goals = self.terrain_goals[self.terrain_levels[self.lookat_id], self.terrain_types[self.lookat_id]].cpu().numpy()
+        goals = self.terrain_goals[self.terrain_levels[self.lookat_id], self.env_col[self.lookat_id]].cpu().numpy()
         for i, goal in enumerate(goals):
             goal_xy = goal[:2] + self.terrain.cfg.border_size
             pts = (goal_xy/self.terrain.cfg.horizontal_scale).astype(int)
@@ -1890,8 +1928,8 @@ class HumanoidRobot(BaseTask):
     #         self.delta_next_yaw[:, None],  # 1
     #         0*self.commands[:, 0:2],  # 2
     #         self.commands[:, 0:1],  # 1
-    #         (self.env_class != 17).float()[:, None],  # 1
-    #         (self.env_class == 17).float()[:, None], # 1
+    #         (self.env_terrain != 17).float()[:, None],  # 1
+    #         (self.env_terrain == 17).float()[:, None], # 1
     #         (self.dof_pos - self.default_dof_pos_all) * self.obs_scales.dof_pos, # 19
     #         self.dof_vel * self.obs_scales.dof_vel,  # 19
     #         self.action_history_buf[:, -1], # 19
@@ -1921,8 +1959,8 @@ class HumanoidRobot(BaseTask):
     #     ), dim=-1)
         
     #     # 地形ID信息 (terrain_id) - 用于教师选择
-    #     if hasattr(self, 'env_class'):
-    #         terrain_id = self.env_class.float().unsqueeze(-1)  # [num_envs, 1]
+    #     if hasattr(self, 'env_terrain'):
+    #         terrain_id = self.env_terrain.float().unsqueeze(-1)  # [num_envs, 1]
     #     else:
     #         terrain_id = torch.zeros(self.num_envs, 1, device=self.device)
         

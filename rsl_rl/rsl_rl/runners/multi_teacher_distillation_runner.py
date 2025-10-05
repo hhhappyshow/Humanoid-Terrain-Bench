@@ -191,6 +191,12 @@ class MultiTeacherDistillationRunner:
                     # 更新存储的动作为环境处理后的动作（与play.py一致）
                     self.alg.transition.actions = processed_actions.detach()
                     
+                    # 新增：收集地形类型信息
+                    terrain_types = self.env.get_env_terrain() if hasattr(self.env, 'get_env_terrain') else None
+                    if terrain_types is not None:
+                        self.alg.transition.terrain_types = terrain_types
+                    print(f"terrain_types: {terrain_types}")
+                    assert False
                     # 处理环境步骤
                     total_rew = self.alg.process_env_step(rewards, dones, infos)
                     

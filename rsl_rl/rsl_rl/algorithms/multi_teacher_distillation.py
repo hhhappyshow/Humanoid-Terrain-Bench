@@ -196,8 +196,10 @@ class MultiTeacherDistillation:
             generator = self.storage.mini_batch_generator(self.num_mini_batches, self.num_learning_epochs)
         
         for obs_batch, critic_obs_batch, actions_batch, target_values_batch, advantages_batch, returns_batch, old_actions_log_prob_batch, \
-            old_mu_batch, old_sigma_batch, hid_states_batch, masks_batch in generator:
-            
+            old_mu_batch, old_sigma_batch, hid_states_batch, masks_batch, terrain_batch in generator:
+
+            print(f"terrain_batch: {terrain_batch.shape}")
+            assert False
             batch_count += 1
             
             # ==================== 学生网络前向传播 ====================
@@ -415,7 +417,7 @@ class MultiTeacherDistillation:
 ########################################################################################
             # ==================== 教师网络推理 ====================
             # 从环境信息中提取地形ID，每个教师对应一种地形
-            terrain_ids = self._extract_terrain_ids(obs_batch)
+            terrain_ids = self._extract_terrain_ids(terrain_batch)
             
             # 调试信息：检查地形ID分布
             if batch_count == 1:
@@ -524,38 +526,103 @@ class MultiTeacherDistillation:
             0                          # 占位符
         )
     
-    def _extract_terrain_ids(self, obs_batch):
-        """从观测中提取地形ID，正确映射到对应的教师
+    # def _extract_terrain_ids(self, obs_batch):
+    #     """从观测中提取地形ID，正确映射到对应的教师
         
-        当前配置：只有1个教师（hurdle地形），所有样本都使用教师0
+    #     当前配置：只有1个教师（hurdle地形），所有样本都使用教师0
+    #     """
+    #     batch_size = obs_batch.shape[0]
+    #     num_teachers = self.actor_critic.num_teachers
+        
+    #     # 初始化terrain_ids
+    #     terrain_ids = torch.zeros(batch_size, dtype=torch.long, device=obs_batch.device)
+        
+    #     if num_teachers == 1:
+    #         # 单教师模式：所有样本都使用教师0
+    #         print(f"[DEBUG] 单教师模式：所有{batch_size}个样本都使用教师0")
+    #     else:
+    #         # 多教师模式：将batch均匀分配给所有教师
+    #         batch_per_teacher = batch_size // num_teachers
+    #         remainder = batch_size % num_teachers
+            
+    #         start_idx = 0
+    #         for teacher_id in range(num_teachers):
+    #             # 计算当前教师负责的样本数量
+    #             current_batch_size = batch_per_teacher + (1 if teacher_id < remainder else 0)
+    #             end_idx = start_idx + current_batch_size
+                
+    #             # 分配给当前教师
+    #             if end_idx > start_idx:
+    #                 terrain_ids[start_idx:end_idx] = teacher_id
+    #             start_idx = end_idx
+        
+    #     return terrain_ids
+    def _extract_terrain_ids(self, terrain_batch):
+        """从地形批次中提取地形ID，正确映射到对应的教师
+        
+        Args:
+            terrain_batch: 地形类型批次 [batch_size] - 包含每个样例的地形类型
+            
+        Returns:
+            terrain_ids: 教师ID批次 [batch_size] - 每个样例应该使用的教师ID
         """
-        batch_size = obs_batch.shape[0]
+        batch_size = terrain_batch.shape[0]
         num_teachers = self.actor_critic.num_teachers
         
-        # 初始化terrain_ids
-        terrain_ids = torch.zeros(batch_size, dtype=torch.long, device=obs_batch.device)
+        print(f"[DEBUG] terrain_batch shape: {terrain_batch.shape}")
+        print(f"[DEBUG] terrain_batch values: {torch.unique(terrain_batch, return_counts=True)}")
         
         if num_teachers == 1:
-            # 单教师模式：所有样本都使用教师0
-            print(f"[DEBUG] 单教师模式：所有{batch_size}个样本都使用教师0")
+            # 单教师模式：使用地形类别信息但都路由到教师0
+            terrain_ids = self._map_terrain_to_teacher(terrain_batch)
+            terrain_ids.fill_(0)  # 强制所有都使用教师0
+            print(f"[DEBUG] 单教师模式：所有{batch_size}个样例都使用教师0")
         else:
-            # 多教师模式：将batch均匀分配给所有教师
-            batch_per_teacher = batch_size // num_teachers
-            remainder = batch_size % num_teachers
+            # 多教师模式：基于真实地形类型进行映射
+            terrain_ids = self._map_terrain_to_teacher(terrain_batch)
             
-            start_idx = 0
-            for teacher_id in range(num_teachers):
-                # 计算当前教师负责的样本数量
-                current_batch_size = batch_per_teacher + (1 if teacher_id < remainder else 0)
-                end_idx = start_idx + current_batch_size
-                
-                # 分配给当前教师
-                if end_idx > start_idx:
-                    terrain_ids[start_idx:end_idx] = teacher_id
-                start_idx = end_idx
+            # 限制教师ID范围
+            terrain_ids = torch.clamp(terrain_ids, 0, num_teachers - 1)
+            
+            # 调试信息：检查地形ID分布
+            unique_teachers, counts = torch.unique(terrain_ids, return_counts=True)
+            print(f"[DEBUG] 教师分配分布: {dict(zip(unique_teachers.cpu().numpy(), counts.cpu().numpy()))}")
+    
+        return terrain_ids
+
+    def _map_terrain_to_teacher(self, terrain_classes):
+        """将地形类别映射到对应的教师ID"""
+        teacher_mapping = {
+            0: 0,   # parkour ->teacher 0
+            1: 1,   # hurdle -> teacher 1  
+            2: 2,   # bridge -> teacher 2
+            3: 3,   # flat -> teacher 3
+            4: 4,   # uneven -> teacher 4
+            5: 5,   # stair -> teacher 5
+            6: 6,   # wave -> teacher 6
+            7: 7,   # slope -> teacher 7
+            8: 8,   # gap -> teacher 8
+            9: 9,   # plot -> teacher 9
+            # 添加更多地形-教师映射
+            #0  parkour
+            #1  hurdle
+            #2  bridge
+            #3  flat
+            #4  uneven,
+            #5  stair
+            #6  wave
+            #7  slope
+            #8  gap
+            #9  plot
+        }
+        
+        terrain_ids = torch.zeros_like(terrain_classes, dtype=torch.long)
+        for terrain_type, teacher_id in teacher_mapping.items():
+            mask = terrain_classes == terrain_type
+            terrain_ids[mask] = teacher_id
         
         return terrain_ids
-    
+
     def _compute_weighted_loss(self, student_actions, teacher_actions, weights):
         """计算加权损失"""
         # student_actions: [batch_size, action_dim]

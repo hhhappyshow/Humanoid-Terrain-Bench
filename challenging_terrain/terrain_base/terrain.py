@@ -72,6 +72,7 @@ class Terrain:
                         difficulty=np.random.uniform(0, 1)
                     terrain = self.make_terrain(difficulty)
                     self.add_terrain_to_map(terrain, i, j)
+        print(f"terrain_type: {self.terrain_type}")
   
         self.heightsamples = self.height_field_raw
         self.vertices, self.triangles, self.x_edge_mask = convert_heightfield_to_trimesh(   self.height_field_raw,
@@ -106,21 +107,23 @@ class Terrain:
         pairs = [] 
         weights = []
         for item in combine_config.proportions:
-            terrain_type, index, weight = item
-            pairs.append((terrain_type, index)) 
+            terrain_type, self.index, weight = item
+            pairs.append((terrain_type, self.index)) 
             weights.append(weight)  
         total_weight = sum(weights)
         normalized_weights = [w / total_weight for w in weights] if total_weight > 0 else weights
         
         selected_pair = random.choices(pairs, weights=normalized_weights, k=1)[0]
-        terrain_type, index = selected_pair  
+        terrain_type, self.index = selected_pair  
+        print(f"terrain_type: {terrain_type}, index: {self.index}")
         difficulty = np.random.uniform(0.7, 1)
         if terrain_type == "single":
-            terrain = generator.single_create(terrain,index,difficulty)
+            terrain = generator.single_create(terrain,self.index,difficulty)
+            print(f"terrain_idx: {terrain.idx}")
         elif terrain_type == "multiplication":
-            terrain = generator.multiplication_create(terrain,index,difficulty)
+            terrain = generator.multiplication_create(terrain,self.index,difficulty)
         elif terrain_type == "addition":
-            terrain = generator.addition_create(terrain,index,difficulty)
+            terrain = generator.addition_create(terrain,self.index,difficulty)
         
         self.add_roughness(terrain,difficulty)
         return terrain
@@ -147,6 +150,7 @@ class Terrain:
             env_origin_z = np.max(terrain.height_field_raw[x1:x2, y1:y2])*terrain.vertical_scale
         self.env_origins[i, j] = [env_origin_x, env_origin_y, env_origin_z]
         self.terrain_type[i, j] = terrain.idx
+        
 
         self.goals[i, j, :, :2] = terrain.goals + [i * self.env_length, j * self.env_width]
 

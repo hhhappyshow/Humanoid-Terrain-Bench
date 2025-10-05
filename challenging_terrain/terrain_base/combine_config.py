@@ -29,11 +29,11 @@ class combine_config:
 
         proportions = [
                 # 只使用单一地形进行多教师蒸馏，确保每个地形都有对应的教师模型
-                ("single", 7, 1.0),  
-                # ("single", 2, 0.2),  
-                # ("single", 3, 0.2),  
-                # ("single", 6, 0.2), 
-                # ("single", 7, 0.2),  
+                ("single", 7, 0.2),  
+                ("single", 2, 0.2),  
+                ("single", 3, 0.2),  
+                ("single", 6, 0.2), 
+                ("single", 4, 0.2),  
         ]
 
 class generator:
