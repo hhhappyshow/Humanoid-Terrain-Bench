@@ -28,8 +28,45 @@
 #
 # Copyright (c) 2021 ETH Zurich, Nikita Rudin
 
-from legged_gym import LEGGED_GYM_ROOT_DIR
 import os
+import sys
+import ctypes
+
+# 设置 LD_LIBRARY_PATH 以解决 libpython3.8.so.1.0 找不到的问题
+# 自动检测 conda 环境路径
+conda_env = os.environ.get('CONDA_PREFIX')
+if not conda_env:
+    # 如果 CONDA_PREFIX 不存在，尝试从 sys.executable 推断
+    python_path = sys.executable
+    if 'anaconda3' in python_path or 'miniconda3' in python_path:
+        # 从 /path/to/anaconda3/envs/env_name/bin/python 提取环境路径
+        parts = python_path.split('/')
+        for i, part in enumerate(parts):
+            if part in ['anaconda3', 'miniconda3']:
+                if i + 2 < len(parts) and parts[i+1] == 'envs':
+                    conda_env = '/'.join(parts[:i+3])
+                    break
+
+if conda_env:
+    lib_path = os.path.join(conda_env, 'lib')
+    libpython_path = os.path.join(lib_path, 'libpython3.8.so.1.0')
+    if os.path.exists(libpython_path):
+        # 设置环境变量（对子进程有效）
+        current_ld_path = os.environ.get('LD_LIBRARY_PATH', '')
+        if lib_path not in current_ld_path:
+            os.environ['LD_LIBRARY_PATH'] = f"{lib_path}:{current_ld_path}" if current_ld_path else lib_path
+        
+        # 预加载库（对当前进程有效）
+        try:
+            if sys.platform.startswith('linux'):
+                # 使用 RTLD_GLOBAL 确保符号对后续加载的库可见
+                ctypes.CDLL(libpython_path, mode=ctypes.RTLD_GLOBAL)
+        except (OSError, AttributeError):
+            # 如果预加载失败（可能库已加载或权限问题），至少环境变量已设置
+            # 这对于通过 dlopen 加载的库仍然有效
+            pass
+
+from legged_gym import LEGGED_GYM_ROOT_DIR
 
 from legged_gym.envs import *
 from legged_gym.utils import  get_args,  task_registry
