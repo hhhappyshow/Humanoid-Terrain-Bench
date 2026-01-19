@@ -28,9 +28,46 @@
 #
 # Copyright (c) 2021 ETH Zurich, Nikita Rudin
 
+import os
+import sys
+import ctypes
+
+# 设置 LD_LIBRARY_PATH 以解决 libpython3.8.so.1.0 找不到的问题
+# 自动检测 conda 环境路径
+conda_env = os.environ.get('CONDA_PREFIX')
+if not conda_env:
+    # 如果 CONDA_PREFIX 不存在，尝试从 sys.executable 推断
+    python_path = sys.executable
+    if 'anaconda3' in python_path or 'miniconda3' in python_path:
+        # 从 /path/to/anaconda3/envs/env_name/bin/python 提取环境路径
+        parts = python_path.split('/')
+        for i, part in enumerate(parts):
+            if part in ['anaconda3', 'miniconda3']:
+                if i + 2 < len(parts) and parts[i+1] == 'envs':
+                    conda_env = '/'.join(parts[:i+3])
+                    break
+
+if conda_env:
+    lib_path = os.path.join(conda_env, 'lib')
+    libpython_path = os.path.join(lib_path, 'libpython3.8.so.1.0')
+    if os.path.exists(libpython_path):
+        # 设置环境变量（对子进程有效）
+        current_ld_path = os.environ.get('LD_LIBRARY_PATH', '')
+        if lib_path not in current_ld_path:
+            os.environ['LD_LIBRARY_PATH'] = f"{lib_path}:{current_ld_path}" if current_ld_path else lib_path
+        
+        # 预加载库（对当前进程有效）
+        try:
+            if sys.platform.startswith('linux'):
+                # 使用 RTLD_GLOBAL 确保符号对后续加载的库可见
+                ctypes.CDLL(libpython_path, mode=ctypes.RTLD_GLOBAL)
+        except (OSError, AttributeError):
+            # 如果预加载失败（可能库已加载或权限问题），至少环境变量已设置
+            # 这对于通过 dlopen 加载的库仍然有效
+            pass
+
 # 导入必要的库和模块
 from legged_gym import LEGGED_GYM_ROOT_DIR  # 项目根目录路径
-import os  # 操作系统接口
 
 from legged_gym.envs import *  # 导入所有环境类
 from legged_gym.utils import  get_args,  task_registry  # 导入工具函数和任务注册表
@@ -73,7 +110,16 @@ def play(args):
     
     # 获取实验ID和日志路径
     exptid = args.exptid
-    log_pth = "../../logs/{}/".format(args.proj_name) + args.exptid
+    
+    # 优先检查 scripts/logs/ 目录（如果存在）
+    scripts_log_path = os.path.join(os.path.dirname(__file__), "logs", exptid)
+    if os.path.exists(scripts_log_path) and os.path.exists(os.path.join(scripts_log_path, "model_50000.pt")):
+        log_pth = scripts_log_path
+        print(f"使用 scripts/logs 中的模型: {log_pth}")
+    else:
+        # 使用标准路径
+        log_pth = "../../logs/{}/".format(args.proj_name) + args.exptid
+        print(f"使用标准路径: {log_pth}")
 
     # 获取环境配置和训练配置
     env_cfg, train_cfg = task_registry.get_cfgs(name=args.task)
@@ -124,8 +170,9 @@ def play(args):
         runner_class_name = "MultiTeacherDistillationRunner"
         # runner_class_name = "OnPolicyRunner"
     )
-    # ppo_runner.load("/home/rashare/zhong/Humanoid-Terrain-Bench-kelun/legged_gym/logs/h1_distillation/slope7/model_15000.pt")
-    ppo_runner.load("/home/rashare/zhong/Humanoid-Terrain-Bench-kelun/legged_gym/legged_gym/scripts/logs/h1_2_fix_1/Sep30_21-47-48/model_0.pt")
+    # 模型应该已经通过 task_registry.make_alg_runner 自动加载（resume=True）
+    # 如果需要手动加载特定模型，可以取消注释下面的行并修改路径
+    # ppo_runner.load(os.path.join(log_pth, "model_50000.pt"))
     
     # assert False
     # 获取推理策略
