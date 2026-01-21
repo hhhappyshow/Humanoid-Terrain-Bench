@@ -86,7 +86,8 @@ def get_load_path(root, load_run=-1, checkpoint=-1, model_name_include="model"):
 def play(args):
     faulthandler.enable()
     exptid = args.exptid
-    log_pth = "../../logs/{}/".format(args.proj_name) + args.exptid
+    # 使用 LEGGED_GYM_ROOT_DIR 构建正确的日志路径
+    log_pth = os.path.join(LEGGED_GYM_ROOT_DIR, "logs", args.proj_name, args.exptid)
 
     env_cfg, train_cfg = task_registry.get_cfgs(name=args.task)
     # override some parameters for testing
